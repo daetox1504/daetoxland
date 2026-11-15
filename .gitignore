@@ -1,0 +1,25 @@
+# 비밀정보와 로컬 설정
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*
+secrets*
+# 실제 업무 데이터 및 내보내기
+data/
+private/
+backups/
+exports/
+*.csv
+*.xlsx
+*.sqlite*
+*.db
+# 개발 부산물
+node_modules/
+.next/
+dist/
+coverage/
+*.log
+.DS_Store
+Thumbs.db
