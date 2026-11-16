@@ -16,8 +16,9 @@ export default function ForgotPasswordPage() {
     setMessage('')
     setError('')
     const supabase = createClient()
+    const redirectOrigin = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/update-password`,
+      redirectTo: `${redirectOrigin}/update-password`,
     })
     if (resetError) setError('재설정 이메일을 보내지 못했습니다. 이메일 주소를 확인해주세요.')
     else setMessage('비밀번호 재설정 이메일을 확인해주세요.')
