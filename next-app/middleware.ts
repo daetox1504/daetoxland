@@ -22,15 +22,15 @@ export async function middleware(request: NextRequest) {
   )
 
   const { data: { user } } = await supabase.auth.getUser()
-  const isLoginPage = request.nextUrl.pathname === '/login'
+  const isPublicAuthPage = ['/login', '/forgot-password', '/update-password'].includes(request.nextUrl.pathname)
 
-  if (!user && !isLoginPage) {
+  if (!user && !isPublicAuthPage) {
     const loginUrl = request.nextUrl.clone()
     loginUrl.pathname = '/login'
     return NextResponse.redirect(loginUrl)
   }
 
-  if (user && isLoginPage) {
+  if (user && request.nextUrl.pathname === '/login') {
     const homeUrl = request.nextUrl.clone()
     homeUrl.pathname = '/'
     return NextResponse.redirect(homeUrl)

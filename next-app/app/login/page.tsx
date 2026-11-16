@@ -1,6 +1,7 @@
 'use client'
 
 import { FormEvent, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
@@ -37,6 +38,7 @@ export default function LoginPage() {
           <label>비밀번호<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete="current-password" /></label>
           {error && <div className="auth-error">{error}</div>}
           <button type="submit" disabled={loading}>{loading ? '로그인 중...' : '로그인'}</button>
+          <Link className="auth-link" href="/forgot-password">비밀번호를 잊으셨나요?</Link>
         </form>
       </section>
     </main>
