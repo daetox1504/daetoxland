@@ -112,3 +112,20 @@ npm run build
 - 메인 탭에서 브라우저 콘솔 `error`/`warn` 로그는 확인되지 않았습니다. Next 빌드의 `middleware`→`proxy` 전환 권고는 계속 표시됩니다.
 
 이번 재검증에서는 위 결함을 수정하지 않았습니다. 사용자가 요청한 대로 원인과 결과만 기록했으며, 다음 단계에서 기존 매물 상세/수정 상태 분리와 좁은 뷰포트 레이아웃을 우선 수정할 수 있습니다.
+
+## 8. 최종 브랜치·배포 검증
+
+| 항목 | 결과 | 세부 결과 |
+|---|---|---|
+| TypeScript | 통과 | `node node_modules/typescript/bin/tsc --noEmit --incremental false` 성공 |
+| 자동 이식 체크 | 통과 | `node scripts/migration-check.mjs` 성공 |
+| 프로덕션 빌드 | 통과 | `npm run build` 성공, 7개 App Router 경로 생성 |
+| lint | 미통과(스크립트 호환성) | package.json의 `next lint`가 Next.js 16.4.6에서 제거되어 `Invalid project directory .../lint`로 종료되었습니다. 별도 ESLint 설정/명령은 현재 프로젝트에 없습니다. |
+| diff 검사 | 통과 | `git diff --check`에서 오류 없음. 줄바꿈 형식 경고만 표시되었습니다. |
+| 민감정보 검사 | 통과 | `.env.local`은 `.gitignore`로 제외되며 Git 추적 파일에 Supabase 서비스 키·개인키가 포함되지 않았습니다. |
+| Git 커밋 | 통과 | `8665622 chore: verify html migration design parity` |
+| GitHub 푸시 | 통과 | `origin/migration/html-design-20261116`로 푸시되어 원격 SHA가 일치합니다. |
+| Vercel Preview | 통과 | `daetoxland-6x1dwmzb1-daetox-land.vercel.app` 배포가 `READY` 상태이며 커밋 SHA `8665622...`와 브랜치가 연결되었습니다. |
+| Preview 기능 테스트 | 부분 확인 | Preview 도메인은 기존 로그인 쿠키를 공유하지 않아 `/login` 화면과 콘솔 오류 없음까지만 확인했습니다. 인증 후 매물 기능은 Preview에서 미검증입니다. |
+
+메인 브랜치 병합과 Vercel Production 배포는 실행하지 않았습니다. 작업 브랜치에는 위 커밋이 올라가 있으며, 작업 디렉터리에는 이번 커밋과 무관한 기존 사용자 변경·원본 파일이 남아 있습니다.
