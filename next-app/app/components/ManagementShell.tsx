@@ -1956,11 +1956,6 @@ export function PropertyManagement({
                         />
                       </span>
                       <Input
-                        label="기타"
-                        value={form.other}
-                        onChange={(v) => set("other", v)}
-                      />
-                      <Input
                         label="고객명"
                         value={form.customer}
                         onChange={(v) => set("customer", v)}
@@ -1969,6 +1964,11 @@ export function PropertyManagement({
                         label="전화번호"
                         value={form.phone}
                         onChange={(v) => set("phone", v)}
+                      />
+                      <Input
+                        label="기타"
+                        value={form.other}
+                        onChange={(v) => set("other", v)}
                       />
                     </div>
                   </Card>
