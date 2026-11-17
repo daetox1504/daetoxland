@@ -42,9 +42,12 @@ function mergeFields(base:BuildingPdfFields,text:string):BuildingPdfFields {
  const building=pick([/건축\s*면적\s*[:：]?\s*([\d,.]+)/])
  const elevator=pick([/(?:승강기|엘리베이터)\s*[:：]?\s*([^\s]+)/])
  const parking=pick([/주차\s*(?:대수|장)?\s*[:：]?\s*([^\s]+)/])
+ // 건축물대장 텍스트 추출은 인허가 표의 날짜가 라벨보다 앞에 배치될 수 있다.
+ // 이 PDF에서는 1985.4.25.가 사용승인일이고, 뒤의 2002.3.2.는 변경 이력 날짜다.
+ const permitApproval=compact.match(/((?:19|20)\d{2}[.\-/]\d{1,2}[.\-/]\d{1,2})\.?\s+인허가\s*시기/)?.[1]||''
  return {
   ...base,
-  approvalDate:pick([/(?:사용\s*승인\s*일|사용\s*승인|준공\s*일)\s*[:：]?\s*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})/])||base.approvalDate,
+  approvalDate:permitApproval||pick([/(?:사용\s*승인\s*일|사용\s*승인|준공\s*일)\s*[:：]?\s*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})/])||base.approvalDate,
   buildingBasement:basement||base.buildingBasement,
   buildingGround:ground||base.buildingGround,
   buildingUse:use||base.buildingUse,
