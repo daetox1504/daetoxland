@@ -1,68 +1,2163 @@
-'use client'
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import { extractBuildingPdf } from '@/lib/buildingPdf'
-import { BuildingFloorRow, parseBuildingRegister } from '@/lib/buildingRegister'
-import { extractBuildingPdfWithOcr } from '@/lib/buildingOcrFixed'
-export type MarketType='rent'|'sale'
-type Row={id:string;name:string;category:string;address:string;status:string;favorite:boolean;manager:string;data:Record<string,string>|null;updated_at:string;deleted_at?:string|null}
-type F={self:string;recommendation:string;name:string;category:string;status:string;other:string;customer:string;phone:string;address:string;manager:string;salePrice:string;deposit:string;monthly:string;unit:string;maintenance:string;premium:string;entry:string;maintenanceNote:string;floorFrom:string;floorTo:string;leaseM2:string;leasePyeong:string;exclusiveM2:string;exclusivePyeong:string;heating:string;gas:string;bathroom:string;elevator:string;violation:string;buildingBasement:string;buildingGround:string;buildingUse:string;buildingStructure:string;landArea:string;totalArea:string;buildingArea:string;buildingElevator:string;parking:string;approvalDate:string;note:string;photoUrl:string;buildingPdfUrl:string;buildingPdfName:string}
-const initial:F={self:'',recommendation:'',name:'새 매물',category:'상가',status:'준비',other:'',customer:'',phone:'',address:'',manager:'',salePrice:'',deposit:'0',monthly:'0',unit:'0',maintenance:'0',premium:'0',entry:'0',maintenanceNote:'',floorFrom:'1',floorTo:'1',leaseM2:'',leasePyeong:'',exclusiveM2:'0',exclusivePyeong:'',heating:'',gas:'',bathroom:'',elevator:'',violation:'',buildingBasement:'0',buildingGround:'1',buildingUse:'',buildingStructure:'',landArea:'0',totalArea:'0',buildingArea:'0',buildingElevator:'0',parking:'0',approvalDate:'',note:'',photoUrl:'',buildingPdfUrl:'',buildingPdfName:''}
-const SQM_PER_PYEONG=3.305785
-function formatFloorRange(from?:string,to?:string,fallback?:string){const a=String(from??'').trim();const b=String(to??'').trim()||a;if(!a&&fallback){const match=String(fallback).match(/(-?\d+)\s*층\s*[-~]\s*(-?\d+)\s*층/);if(match)return formatFloorRange(match[1],match[2]);return String(fallback)}if(!a)return '—';const label=(value:string)=>{const n=Number(value);if(!Number.isFinite(n))return value.includes('층')?value:`${value}층`;return n<0?`B${Math.abs(n)}층`:`${n}층`};return a===b?label(a):`${label(a)} ~ ${label(b)}`}
-export function Sidebar(){const pathname=usePathname();const active=(href:string)=>href==='/'?pathname==='/':pathname===href||pathname.startsWith(`${href}/`);return <aside className="sidebar"><Link className="brand" href="/"><span className="brand-icon">▥</span><span>대톡스랜드<small>COMMERCIAL REAL ESTATE</small></span></Link><Link className="workspace" href="/"><span className="avatar">D</span><span><b>나의 중개사무소</b><small>로컬 연습 공간</small></span><span className="online"/></Link><div className="nav-title">WORKSPACE</div><nav className="nav" aria-label="업무 메뉴"><Link className={active('/')?'active':''} href="/">나의 중개사무소</Link><Link className={active('/rentals')?'active':''} href="/rentals"><span>▦</span>임대 매물관리</Link><Link className={active('/sales')?'active':''} href="/sales"><span>▤</span>매매 매물관리</Link><Link className={active('/customers')?'active':''} href="/customers"><span>♙</span>고객 장부</Link></nav><div className="side-note"><span className="demo-dot"/>가상 데이터 모드<p>매물과 고객을 정리하는<br/>우리 사무소의 업무 공간</p></div><div className="side-footer">DAETOX LAND <span>기본 MVP v0.3</span></div></aside>}
-export function TopBar({marketType}:{marketType?:MarketType}){const pathname=usePathname();const label=pathname==='/sales'?'매매 매물관리':pathname==='/customers'?'고객 장부':pathname==='/rentals'?'임대 매물관리':pathname.startsWith('/briefing')?'브리핑':'나의 중개사무소';return <header className="topbar"><div className="breadcrumb">업무 공간 <span>/</span> <strong>{label}</strong></div><div className="topbar-actions"><span>CSV 내보내기</span><span>백업 저장</span><span>백업 복원</span><span className="demo-badge">● 가상 데이터 · 연습용</span></div></header>}
-function Input({label,value,onChange}:{label:string;value:string;onChange:(v:string)=>void}){return <label>{label}<input value={value} onChange={e=>onChange(e.target.value)}/></label>}
-function Select({label,value,onChange,options}:{label:string;value:string;onChange:(v:string)=>void;options:string[]}){return <label>{label}<select value={value} onChange={e=>onChange(e.target.value)}>{options.map(o=><option key={o}>{o}</option>)}</select></label>}
-function Card({title,action,children}:{title:string;action?:React.ReactNode;children:React.ReactNode}){return <section className="detail-card"><h3>{title}{action}</h3><div className="detail-card-body">{children}</div></section>}
-type RentalFilter={category:string;status:string;region:string;address:string;areaUnit:'sqm'|'pyeong';areaMin:string;areaMax:string;floorMin:string;floorMax:string;depositMin:string;depositMax:string;rentMin:string;rentMax:string;favorite:string;search:string}
-const emptyRentalFilter:RentalFilter={category:'',status:'',region:'',address:'',areaUnit:'sqm',areaMin:'',areaMax:'',floorMin:'',floorMax:'',depositMin:'',depositMax:'',rentMin:'',rentMax:'',favorite:'',search:''}
-function numberValue(v:unknown){const n=Number(v);return Number.isFinite(n)?n:null}
-function flexibleNumber(v:unknown){if(typeof v==='number')return Number.isFinite(v)?v:null;const text=String(v??'').replace(/,/g,'').trim();if(!text)return null;const eok=text.match(/(\d+(?:\.\d+)?)\s*억/);const man=text.match(/(\d+(?:\.\d+)?)\s*만/);if(eok)return Number(eok[1])*10000+(man?Number(man[1]):0);const n=Number(text.replace(/[^\d.-]/g,''));return Number.isFinite(n)?n:null}
-function rangeMatch(v:number|null,min:string,max:string){if(min&& (v===null||v<Number(min)))return false;if(max&&(v===null||v>Number(max)))return false;return true}
-function matchesRentalFilter(row:Row,f:RentalFilter){const x=row.data??{};const q=f.search.trim().toLowerCase();const hay=[row.name,row.address,x.note,x.other,x.recommendation].join(' ').toLowerCase();if(q&&!hay.includes(q))return false;const status=f.status==='중개중'?'진행':f.status==='계약완료'?'거래완료':f.status;if(f.category&&row.category!==f.category)return false;if(status&&row.status!==status)return false;if(f.region&&!(row.address||'').startsWith(f.region))return false;if(f.address&&!(row.address||'').toLowerCase().includes(f.address.toLowerCase()))return false;if(f.favorite==='yes'&&!row.favorite)return false;const area=numberValue(x.exclusiveM2);const areaVal=area===null?null:f.areaUnit==='pyeong'?area/3.305785:area;const floor=numberValue(x.floorFrom)??numberValue((x.floor||'').match?.(/-?\d+/)?.[0]);const deposit=numberValue(x.deposit);const rent=numberValue(x.monthlyRent);const range=(v:number|null,min:string,max:string)=>!min||v!==null&&v>=Number(min)?!max||v!==null&&v<=Number(max):false;if(!range(areaVal,f.areaMin,f.areaMax)||!range(floor,f.floorMin,f.floorMax)||!range(deposit,f.depositMin,f.depositMax)||!range(rent,f.rentMin,f.rentMax))return false;return true}
-function RentalFilterPanel({getRows,onApply,onReset}:{getRows:()=>Row[];onApply:(rows:Row[],filter:RentalFilter)=>void;onReset:()=>void}){const [f,setF]=useState<RentalFilter>(emptyRentalFilter);const rows=getRows();const regions=Array.from(new Set(rows.map(r=>(r.address||'').split(/\s+/)[0]).filter(Boolean)));const change=(k:keyof RentalFilter,v:string)=>setF(x=>({...x,[k]:v}));const apply=()=>{const latest=getRows();onApply(latest.filter(r=>matchesRentalFilter(r,f)),f)};const reset=()=>{setF(emptyRentalFilter);onReset()};return <section className="filter-panel rental-filter-panel"><div className="filter-top"><h2>매물 찾기 <span>FILTER</span></h2><button type="button" className="text-button" onClick={reset}>↺ 필터 초기화</button></div><div className="rental-filter-grid"><label>분류<select value={f.category} onChange={e=>change('category',e.target.value)}><option value="">전체 분류</option><option>상가</option><option>사무실</option><option>상가주택</option><option>아파트</option><option>기타</option></select></label><label>진행 상태<select value={f.status} onChange={e=>change('status',e.target.value)}><option value="">전체 상태</option><option>중개중</option><option>보류</option><option>계약완료</option></select></label><label>지역<select value={f.region} onChange={e=>change('region',e.target.value)}><option value="">전체 지역</option>{regions.map(r=><option key={r}>{r}</option>)}</select></label><label>주소<input value={f.address} onChange={e=>change('address',e.target.value)} placeholder="동·도로명·번지 검색"/></label><label className="filter-range">전용면적 <select value={f.areaUnit} onChange={e=>change('areaUnit',e.target.value)}><option value="sqm">㎡</option><option value="pyeong">평</option></select><span><input value={f.areaMin} onChange={e=>change('areaMin',e.target.value)} placeholder="최소" inputMode="decimal"/><i>~</i><input value={f.areaMax} onChange={e=>change('areaMax',e.target.value)} placeholder="최대" inputMode="decimal"/></span></label><label className="filter-range">임대층 <small>지하: 음수 / 1층: 1</small><span><input value={f.floorMin} onChange={e=>change('floorMin',e.target.value)} placeholder="최소층" inputMode="numeric"/><i>~</i><input value={f.floorMax} onChange={e=>change('floorMax',e.target.value)} placeholder="최대층" inputMode="numeric"/></span></label><label className="filter-range">보증금 <small>만원</small><span><input value={f.depositMin} onChange={e=>change('depositMin',e.target.value)} placeholder="최소" inputMode="numeric"/><i>~</i><input value={f.depositMax} onChange={e=>change('depositMax',e.target.value)} placeholder="최대" inputMode="numeric"/></span></label><label className="filter-range">월세 <small>만원</small><span><input value={f.rentMin} onChange={e=>change('rentMin',e.target.value)} placeholder="최소" inputMode="numeric"/><i>~</i><input value={f.rentMax} onChange={e=>change('rentMax',e.target.value)} placeholder="최대" inputMode="numeric"/></span></label><label>관심 매물<select value={f.favorite} onChange={e=>change('favorite',e.target.value)}><option value="">전체 매물</option><option value="yes">관심 매물만</option></select></label><div className="filter-search"><label><span>⌕</span><input value={f.search} onChange={e=>change('search',e.target.value)} onKeyDown={e=>{if(e.key==='Enter')apply()}} placeholder="매물명·주소·메모 검색"/></label><button type="button" className="primary-button" onClick={apply}>검색</button></div></div><div className="filter-bottom"><span>{f.search||f.category||f.status||f.region||f.address||f.favorite?'현재 필터를 적용하고 있습니다':'전체 매물을 보고 있습니다'}</span><span>금액: 만원 · 면적: 전용 기준</span></div></section>}
-type SaleFilter={category:string;status:string;region:string;address:string;areaUnit:'sqm'|'pyeong';areaMin:string;areaMax:string;floorMin:string;floorMax:string;saleMin:string;saleMax:string;favorite:string;recommendation:string;search:string}
-const emptySaleFilter:SaleFilter={category:'',status:'',region:'',address:'',areaUnit:'sqm',areaMin:'',areaMax:'',floorMin:'',floorMax:'',saleMin:'',saleMax:'',favorite:'',recommendation:'',search:''}
-function matchesSaleFilter(row:Row,f:SaleFilter){const x=row.data??{};const q=f.search.trim().toLowerCase();const hay=[row.name,row.address,x.note,x.other,x.recommendation,x.salePrice].join(' ').toLowerCase();if(q&&!hay.includes(q))return false;const status=f.status==='중개중'?'진행':f.status==='계약완료'?'거래완료':f.status;if(f.category&&row.category!==f.category)return false;if(status&&row.status!==status)return false;if(f.region&&!(row.address||'').startsWith(f.region))return false;if(f.address&&!(row.address||'').toLowerCase().includes(f.address.toLowerCase()))return false;if(f.favorite==='yes'&&!row.favorite)return false;if(f.recommendation&&x.recommendation!==f.recommendation)return false;const area=numberValue(x.exclusiveM2??x.exclusiveArea);const areaVal=area===null?null:f.areaUnit==='pyeong'?area/SQM_PER_PYEONG:area;const floor=numberValue(x.floorFrom)??numberValue((x.floor||'').match?.(/-?\d+/)?.[0]);const sale=flexibleNumber(x.salePrice);return rangeMatch(areaVal,f.areaMin,f.areaMax)&&rangeMatch(floor,f.floorMin,f.floorMax)&&rangeMatch(sale,f.saleMin,f.saleMax)}
-function SaleFilterPanel({getRows,onApply,onReset}:{getRows:()=>Row[];onApply:(rows:Row[],filter:SaleFilter)=>void;onReset:()=>void}){const [f,setF]=useState<SaleFilter>(emptySaleFilter);const rows=getRows();const regions=Array.from(new Set(rows.map(r=>(r.address||'').split(/\s+/)[0]).filter(Boolean)));const recommendations=Array.from(new Set(rows.map(r=>r.data?.recommendation||'').filter(Boolean)));const change=(k:keyof SaleFilter,v:string)=>setF(x=>({...x,[k]:v}));const apply=()=>{const latest=getRows();onApply(latest.filter(r=>matchesSaleFilter(r,f)),f)};const reset=()=>{setF(emptySaleFilter);onReset()};return <section className="filter-panel sale-filter-panel"><div className="filter-top"><h2>매물 찾기 <span>FILTER</span></h2><button type="button" className="text-button" onClick={reset}>↺ 필터 초기화</button></div><div className="rental-filter-grid"><label>분류<select value={f.category} onChange={e=>change('category',e.target.value)}><option value="">전체 분류</option><option>상가</option><option>사무실</option><option>아파트</option><option>기타</option></select></label><label>진행 상태<select value={f.status} onChange={e=>change('status',e.target.value)}><option value="">전체 상태</option><option>중개중</option><option>보류</option><option>계약완료</option></select></label><label>지역<select value={f.region} onChange={e=>change('region',e.target.value)}><option value="">전체 지역</option>{regions.map(r=><option key={r}>{r}</option>)}</select></label><label>주소<input value={f.address} onChange={e=>change('address',e.target.value)} placeholder="동·도로명·번지 검색"/></label><label className="filter-range">전용면적 <select value={f.areaUnit} onChange={e=>change('areaUnit',e.target.value)}><option value="sqm">㎡</option><option value="pyeong">평</option></select><span><input value={f.areaMin} onChange={e=>change('areaMin',e.target.value)} placeholder="최소" inputMode="decimal"/><i>~</i><input value={f.areaMax} onChange={e=>change('areaMax',e.target.value)} placeholder="최대" inputMode="decimal"/></span></label><label className="filter-range">층 <small>지하: 음수 / 1층: 1</small><span><input value={f.floorMin} onChange={e=>change('floorMin',e.target.value)} placeholder="최소층" inputMode="numeric"/><i>~</i><input value={f.floorMax} onChange={e=>change('floorMax',e.target.value)} placeholder="최대층" inputMode="numeric"/></span></label><label className="filter-range">매매가 <small>만원</small><span><input value={f.saleMin} onChange={e=>change('saleMin',e.target.value)} placeholder="최소" inputMode="numeric"/><i>~</i><input value={f.saleMax} onChange={e=>change('saleMax',e.target.value)} placeholder="최대" inputMode="numeric"/></span></label><label>추천용도<select value={f.recommendation} onChange={e=>change('recommendation',e.target.value)}><option value="">전체 추천용도</option>{recommendations.map(r=><option key={r}>{r}</option>)}</select></label><label>관심 매물<select value={f.favorite} onChange={e=>change('favorite',e.target.value)}><option value="">전체 매물</option><option value="yes">관심 매물만</option></select></label><div className="filter-search"><label><span>⌕</span><input value={f.search} onChange={e=>change('search',e.target.value)} onKeyDown={e=>{if(e.key==='Enter')apply()}} placeholder="매물명·주소·메모 검색"/></label><button type="button" className="primary-button" onClick={apply}>검색</button></div></div><div className="filter-bottom"><span>{f.search||f.category||f.status||f.region||f.address||f.favorite||f.recommendation?'현재 필터를 적용하고 있습니다':'전체 매물을 보고 있습니다'}</span><span>금액: 만원 · 면적: 전용 기준</span></div></section>}
-export function PropertyManagement({marketType,title,description}:{marketType:MarketType;title:string;description:string}){
- const isRent=marketType==='rent';const [rows,setRows]=useState<Row[]>([]);const baseRowsRef=useRef<Row[]>([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');const [open,setOpen]=useState(false);const [selected,setSelected]=useState<Row|null>(null);const [checked,setChecked]=useState<string[]>([]);const [showTrash,setShowTrash]=useState(false);const [trash,setTrash]=useState<Row[]>([]);const [undo,setUndo]=useState<string[]>([]);const [form,setForm]=useState<F>(initial);const [floorOpen,setFloorOpen]=useState(false);const [floorRows,setFloorRows]=useState<BuildingFloorRow[]>([]);const [logs,setLogs]=useState<string[]>([]);const [pdfName,setPdfName]=useState('');const [photoFile,setPhotoFile]=useState<File|null>(null);const [pdfFile,setPdfFile]=useState<File|null>(null);const pdfInputRef=useRef<HTMLInputElement|null>(null)
- const set=(key:keyof F,v:string)=>setForm(f=>({...f,[key]:v}));const d=(r:Row|null)=>r?.data??{};const toggle=(id:string)=>setChecked(c=>c.includes(id)?c.filter(x=>x!==id):[...c,id]);const toggleAll=()=>setChecked(checked.length===rows.length?[]:rows.map(r=>r.id));async function toggleFavorite(id:string){const row=rows.find(r=>r.id===id)||baseRowsRef.current.find(r=>r.id===id);if(!row)return;const favorite=!row.favorite;row.favorite=favorite;baseRowsRef.current.forEach(r=>{if(r.id===id)r.favorite=favorite});setRows(current=>current.map(r=>r.id===id?r:{...r}));const s=createClient();await s.from('properties').update({favorite}).eq('id',id)}
- async function load(){const s=createClient();const a=await s.from('properties').select('id,name,category,address,status,favorite,manager,data,updated_at,deleted_at').eq('market_type',marketType).is('deleted_at',null).order('updated_at',{ascending:false});const t=await s.from('properties').select('id,name,category,address,status,favorite,manager,data,updated_at,deleted_at').eq('market_type',marketType).not('deleted_at','is',null).order('deleted_at',{ascending:false});if(a.error||t.error)setError('매물 데이터를 불러오지 못했습니다.');else{const nextRows=(a.data??[]) as Row[];baseRowsRef.current=nextRows;setRows(nextRows);setTrash((t.data??[]) as Row[]);setChecked([])}setLoading(false)}
- useEffect(()=>{load()},[marketType]);useEffect(()=>{if(selected){setForm(formFromRow(selected));setOpen(true)}},[selected]);useEffect(()=>{const h=(event:MouseEvent)=>{const target=event.target;if(!(target instanceof Element))return;if(target.closest('input,button,a,select,textarea,.favorite'))return;const el=target.closest('.rental-row,.property-row');if(!el)return;const all=Array.from(document.querySelectorAll('.rental-row,.property-row'));const i=all.indexOf(el);if(i>=0&&rows[i])setSelected(rows[i])};document.addEventListener('click',h,true);return()=>document.removeEventListener('click',h,true)},[rows]);useEffect(()=>{const cells=document.querySelectorAll<HTMLElement>('.rental-row > span:nth-child(8)');rows.forEach((row,i)=>{const x=d(row);if(cells[i])cells[i].textContent=formatFloorRange(x.floorFrom,x.floorTo,x.floor)})},[rows,isRent]);
- useEffect(()=>{if(!open)return;const host=document.querySelector('.detail-head-actions');if(host&&!host.querySelector('.briefing-button')){const cancel=Array.from(host.querySelectorAll('button')).find(b=>b.textContent?.trim()==='취소');if(cancel){const btn=document.createElement('button');btn.type='button';btn.className='text-button briefing-button';btn.textContent='브리핑';btn.disabled=!selected;btn.onclick=()=>{if(selected)window.open(`/briefing/${selected.id}`,'_blank','noopener,noreferrer')};host.insertBefore(btn,cancel)}}const pdf=Array.from(document.querySelectorAll('.detail-card h3 + .detail-card-body')).map(x=>x.parentElement?.querySelector('h3 + .detail-card-body')).length;return()=>{void pdf}},[open,selected])
- useEffect(()=>{if(!open)return;const h=(event:MouseEvent)=>{const t=event.target;if(!(t instanceof Element))return;const button=t.closest('button');if(!button)return;const label=button.textContent?.trim();if(label==='PDF 업로드'){event.preventDefault();event.stopPropagation();const input=document.createElement('input');input.type='file';input.accept='application/pdf';input.onchange=()=>{const file=input.files?.[0];if(file)setPdfName(file.name)};input.click()}if(label==='일지 저장'){event.preventDefault();event.stopPropagation();if(form.note.trim()){setLogs(current=>[`${new Intl.DateTimeFormat('ko-KR',{dateStyle:'medium',timeStyle:'short'}).format(new Date())} · ${form.note.trim()}`,...current]);set('note','')}}};document.addEventListener('click',h,true);return()=>document.removeEventListener('click',h,true)},[open,form.note])
- useEffect(()=>{if(!open)return;const add=()=>{const host=document.querySelector('.detail-head-actions');if(!host||host.querySelector('.briefing-button'))return;const cancel=Array.from(host.querySelectorAll('button')).find(b=>b.textContent?.trim()==='취소');if(!cancel)return;const btn=document.createElement('button');btn.type='button';btn.className='text-button briefing-button';btn.textContent='브리핑';btn.disabled=!selected;btn.onclick=()=>{if(selected)window.open(`/briefing/${selected.id}`,'_blank','noopener,noreferrer')};host.insertBefore(btn,cancel)};add();const observer=new MutationObserver(add);observer.observe(document.body,{childList:true,subtree:true});return()=>observer.disconnect()},[open,selected])
- function openNew(){setSelected(null);setForm(initial);setLogs([]);setFloorRows([]);setPdfName('');setPhotoFile(null);setPdfFile(null);setFloorOpen(false);setOpen(true)}
-function formFromRow(r:Row):F{const x=d(r);return {...initial,name:r.name,category:r.category,status:r.status,address:r.address,manager:r.manager||'',self:x.self||'',recommendation:x.recommendation||'',other:x.other||'',customer:x.customer||'',phone:x.phone||'',salePrice:x.salePrice||'',deposit:x.deposit||'0',monthly:x.monthlyRent||'0',unit:x.unitPrice||'0',maintenance:x.maintenance||'0',premium:x.premium||'0',entry:x.entryPrice||'0',maintenanceNote:x.maintenanceNote||'',floorFrom:x.floorFrom||'1',floorTo:x.floorTo||'1',leaseM2:x.leaseM2||'',leasePyeong:x.leasePyeong||'',exclusiveM2:x.exclusiveM2||'',exclusivePyeong:x.exclusivePyeong||'',heating:x.heating||'',gas:x.gas||'',bathroom:x.bathroom||'',elevator:x.elevator||'',violation:x.violation||'',buildingBasement:x.buildingBasement||'0',buildingGround:x.buildingGround||'1',buildingUse:x.buildingUse||'',buildingStructure:x.buildingStructure||'',landArea:x.landArea||'0',totalArea:x.totalArea||'0',buildingArea:x.buildingArea||'0',buildingElevator:x.buildingElevator||'0',parking:x.parking||'0',approvalDate:x.approvalDate||'',note:'',photoUrl:x.photoUrl||''}}
- useEffect(()=>{if(!isRent)return;const inject=()=>{const head=document.querySelector('.rental-head');if(head&&!head.querySelector('.recommendation-head')){const cell=document.createElement('span');cell.className='recommendation-head';cell.textContent='추천용도';head.insertBefore(cell,head.lastElementChild)}document.querySelectorAll('.rental-row').forEach((row)=>{if(row.querySelector('.recommendation-cell'))return;const i=Array.from(document.querySelectorAll('.rental-row')).indexOf(row);const cell=document.createElement('span');cell.className='recommendation-cell';cell.textContent=d(rows[i])?.recommendation||'—';row.insertBefore(cell,row.lastElementChild)})};inject();const observer=new MutationObserver(inject);observer.observe(document.body,{childList:true,subtree:true});return()=>observer.disconnect()},[rows,isRent])
- useEffect(()=>{document.querySelectorAll('.rental-row').forEach((row,index)=>{const cell=row.querySelector('.photo-cell');const url=d(rows[index])?.photoUrl;if(cell&&url&&!cell.querySelector('img')){const img=document.createElement('img');img.src=url;img.alt='매물 사진';cell.replaceChildren(img)}})},[rows,isRent]);useEffect(()=>{if(!open)return;const host=document.querySelector('.main-photo-box');if(!host)return;host.replaceChildren();if(form.photoUrl){const img=document.createElement('img');img.src=form.photoUrl;img.alt='메인 사진';host.append(img)}else{const label=document.createElement('span');label.textContent='메인 사진';host.append(label)}},[open,form.photoUrl])
- useEffect(()=>{const h=(event:MouseEvent)=>{const target=event.target;if(!(target instanceof Element))return;const favorite=target.closest('.favorite');if(!favorite)return;event.preventDefault();event.stopImmediatePropagation();const row=favorite.closest('.rental-row');if(!row)return;const i=Array.from(document.querySelectorAll('.rental-row')).indexOf(row);if(i>=0&&rows[i])toggleFavorite(rows[i].id)};document.addEventListener('click',h,true);return()=>document.removeEventListener('click',h,true)},[rows,isRent])
- async function handlePdf(e:ChangeEvent<HTMLInputElement>){const file=e.target.files?.[0];if(!file)return;setPdfName(file.name);setPdfFile(file);try{const parsed=await parseBuildingRegister(file);setForm(f=>({...f,approvalDate:parsed.fields.approvalDate||f.approvalDate,buildingBasement:parsed.fields.buildingBasement||f.buildingBasement,buildingGround:parsed.fields.buildingGround||f.buildingGround,buildingUse:parsed.fields.buildingUse||f.buildingUse,buildingStructure:parsed.fields.buildingStructure||f.buildingStructure,landArea:parsed.fields.landArea||f.landArea,totalArea:parsed.fields.totalArea||f.totalArea,buildingArea:parsed.fields.buildingArea||f.buildingArea,buildingElevator:parsed.fields.buildingElevator||f.buildingElevator,parking:parsed.fields.parking||f.parking,buildingPdfName:file.name}))}catch(error){try{const parsed=await extractBuildingPdfWithOcr(file);setForm(f=>({...f,approvalDate:parsed.fields.approvalDate||f.approvalDate,buildingBasement:parsed.fields.buildingBasement||f.buildingBasement,buildingGround:parsed.fields.buildingGround||f.buildingGround,buildingUse:parsed.fields.buildingUse||f.buildingUse,buildingStructure:parsed.fields.buildingStructure||f.buildingStructure,landArea:parsed.fields.landArea||f.landArea,totalArea:parsed.fields.totalArea||f.totalArea,buildingArea:parsed.fields.buildingArea||f.buildingArea,buildingElevator:parsed.fields.buildingElevator||f.buildingElevator,parking:parsed.fields.parking||f.parking,buildingPdfName:file.name}))}catch(ocrError){setError(`PDF 텍스트/OCR을 읽지 못했습니다. ${ocrError instanceof Error?ocrError.message:''}`)}}}
- useEffect(()=>{if(!open)return;const h=(event:Event)=>{const input=event.target;if(!(input instanceof HTMLInputElement)||input.type!=='file'||input.accept!=='image/*')return;const file=input.files?.[0];if(file){setPhotoFile(file);set('photoUrl',URL.createObjectURL(file))}};document.addEventListener('change',h,true);return()=>document.removeEventListener('change',h,true)},[open])
- useEffect(()=>{if(!open||!pdfFile)return;let cancelled=false;(async()=>{try{const parsed=await parseBuildingRegister(pdfFile);if(cancelled)return;setFloorRows(parsed.floors);const latestViolation=parsed.text.lastIndexOf('위반건축물');const latestRelease=parsed.text.lastIndexOf('위반건축물 해제');if(latestViolation>=0)set('violation',latestRelease>latestViolation?'X':'O')}catch{setFloorRows([])}})();return()=>{cancelled=true}},[open,pdfFile])
- useEffect(()=>{if(!open||!floorOpen)return;const table=document.querySelector('.floor-table');if(!table)return;table.replaceChildren();if(!floorRows.length){const empty=document.createElement('div');empty.textContent='PDF에서 층별 정보가 추출되지 않았습니다.';table.append(empty);return}const head=document.createElement('div');head.className='floor-table-head';['층','구조','용도','면적(㎡)'].forEach(label=>{const cell=document.createElement('span');cell.textContent=label;head.append(cell)});table.append(head);floorRows.forEach(row=>{const line=document.createElement('div');line.className='floor-table-row';[row.floor,row.structure,row.usage,row.area].forEach(value=>{const cell=document.createElement('span');cell.textContent=value;line.append(cell)});table.append(line)})},[open,floorOpen,floorRows])
- useEffect(()=>{if(!selected||!floorRows.length)return;const s=createClient();const next={...(selected.data??{}),floorRows,buildingPdfName:form.buildingPdfName,buildingPdfUrl:form.buildingPdfUrl,buildingBasement:form.buildingBasement,buildingGround:form.buildingGround,buildingUse:form.buildingUse,buildingStructure:form.buildingStructure,landArea:form.landArea,totalArea:form.totalArea,buildingArea:form.buildingArea,buildingElevator:form.buildingElevator,parking:form.parking,approvalDate:form.approvalDate,violation:form.violation};s.from('properties').update({data:next}).eq('id',selected.id).then(result=>{if(result.error)setError(result.error.message)})},[selected,floorRows,form.buildingPdfName,form.buildingPdfUrl,form.buildingBasement,form.buildingGround,form.buildingUse,form.buildingStructure,form.landArea,form.totalArea,form.buildingArea,form.buildingElevator,form.parking,form.approvalDate,form.violation])
- useEffect(()=>{if(selected){setForm(formFromRow(selected));const saved=(selected.data?.floorRows??[]) as BuildingFloorRow[];setFloorRows(Array.isArray(saved)?saved:[])}},[selected])
- useEffect(()=>{if(!loading&&baseRowsRef.current.length===0&&rows.length)baseRowsRef.current=rows},[loading,rows])
- useEffect(()=>{},[])
- const saleTable=<div className="rental-table sale-table"><div className="rental-head"><span><input type="checkbox" checked={rows.length>0&&checked.length===rows.length} onChange={toggleAll}/></span><span>관심</span><span>매매매물번호</span><span>자체관리번호</span><span>사진</span><span>분류/매물명</span><span>주소</span><span>층</span><span>면적(평)</span><span>금액(만원)</span><span>추천용도</span><span>일자</span></div>{rows.map((r,i)=>{const x=d(r);const floorFrom=x.floorFrom||x.floor||'';const floorTo=x.floorTo||floorFrom;const floor=floorFrom&&floorTo&&floorFrom!==floorTo?`${floorFrom}층-${floorTo}층`:(floorFrom?`${floorFrom}층`:'—');const area=numberValue(x.exclusiveM2??x.exclusiveArea);const pyeong=area===null?'—':String(Math.floor((area/SQM_PER_PYEONG)*10)/10).replace(/\.0$/,'');return <article className="rental-row" key={r.id} onClick={()=>setSelected(r)}><span><input type="checkbox" checked={checked.includes(r.id)} onClick={e=>e.stopPropagation()} onChange={()=>toggle(r.id)}/></span><span className={r.favorite?'favorite active':'favorite'}>★</span><span>{x.propertyNumber||2001+i}</span><span>{x.managementNumber||'—'}</span><span className="photo-cell">사진</span><div><small>{r.category}</small><strong>{r.name}</strong></div><span className="address">{r.address||'주소 미입력'}</span><span>{floor}</span><span>{pyeong}</span><span className="amount-cell">{x.salePrice||'미입력'}</span><span>{x.recommendation||'—'}</span><span>{r.updated_at.slice(0,10)}</span></article>})}</div>
- async function uploadPhoto(s:ReturnType<typeof createClient>,userId:string){if(!photoFile)return form.photoUrl;const folder=`${userId}/${selected?.id||crypto.randomUUID()}`;const path=`${folder}/${Date.now()}-${photoFile.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;const bucket=s.storage.from('property-photos');const upload=await bucket.upload(path,photoFile,{upsert:true,contentType:photoFile.type});if(upload.error){/* Keep the feature usable while a project has not yet created the Storage bucket. The data URL is persisted in properties.data and remains visible in lists/briefings after refresh. */return await new Promise<string>((resolve)=>{const reader=new FileReader();reader.onload=()=>resolve(typeof reader.result==='string'?reader.result:form.photoUrl);reader.onerror=()=>resolve(form.photoUrl);reader.readAsDataURL(photoFile)})}if(selected?.id){const oldFiles=await bucket.list(folder);const stale=oldFiles.data?.map(file=>`${folder}/${file.name}`).filter(file=>file!==path)||[];if(stale.length)await bucket.remove(stale)}return bucket.getPublicUrl(path).data.publicUrl}
- async function uploadBuildingPdf(s:ReturnType<typeof createClient>,userId:string){if(!pdfFile)return form.buildingPdfUrl;const path=`${userId}/${selected?.id||crypto.randomUUID()}/${Date.now()}-${pdfFile.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;const upload=await s.storage.from('property-documents').upload(path,pdfFile,{upsert:true,contentType:'application/pdf'});if(upload.error){setError(`건축물대장 PDF 업로드 실패: ${upload.error.message}`);return form.buildingPdfUrl}return s.storage.from('property-documents').getPublicUrl(path).data.publicUrl}
- useEffect(()=>{if(!selected||!pdfFile)return;let cancelled=false;(async()=>{const s=createClient();const {data}=await s.auth.getUser();if(!data.user)return;const url=await uploadBuildingPdf(s,data.user.id);if(cancelled||!url)return;const current=selected.data??{};const next={...current,buildingPdfUrl:url,buildingPdfName:pdfFile.name};const result=await s.from('properties').update({data:next}).eq('id',selected.id);if(result.error)setError(result.error.message);else setForm(f=>({...f,buildingPdfUrl:url,buildingPdfName:pdfFile.name}))})();return()=>{cancelled=true}},[selected,pdfFile])
- async function persistProperty(){const s=createClient();const {data:a}=await s.auth.getUser();if(!a.user){setError('로그인 세션이 없습니다.');return}const photoUrl=await uploadPhoto(s,a.user.id);const buildingPdfUrl=await uploadBuildingPdf(s,a.user.id);const detail={self:form.self,recommendation:form.recommendation,other:form.other,customer:form.customer,phone:form.phone,floorFrom:form.floorFrom,floorTo:form.floorTo,floor:`${form.floorFrom}층 - ${form.floorTo}층`,floorRows,leaseM2:form.leaseM2,leasePyeong:form.leasePyeong,exclusiveM2:form.exclusiveM2,exclusivePyeong:form.exclusivePyeong,deposit:form.deposit,monthlyRent:form.monthly,unitPrice:form.unit,maintenance:form.maintenance,premium:form.premium,entryPrice:form.entry,maintenanceNote:form.maintenanceNote,heating:form.heating,gas:form.gas,bathroom:form.bathroom,elevator:form.elevator,violation:form.violation,buildingBasement:form.buildingBasement,buildingGround:form.buildingGround,buildingUse:form.buildingUse,buildingStructure:form.buildingStructure,landArea:form.landArea,totalArea:form.totalArea,buildingArea:form.buildingArea,buildingElevator:form.buildingElevator,parking:form.parking,approvalDate:form.approvalDate,note:form.note,photoUrl,buildingPdfUrl,buildingPdfName:pdfName};const payload={market_type:marketType,name:form.name,category:form.category,address:form.address,status:form.status,manager:form.manager,data:detail};const result=selected?await s.from('properties').update(payload).eq('id',selected.id):await s.from('properties').insert({...payload,user_id:a.user.id});if(result.error)setError(result.error.message);else{setOpen(false);setSelected(null);setPhotoFile(null);setPdfFile(null);setLoading(true);load()}}
- useEffect(()=>{if(!open)return;const submit=(event:SubmitEvent)=>{const formEl=event.target;if(!(formEl instanceof HTMLFormElement))return;event.preventDefault();event.stopPropagation();persistProperty()};document.addEventListener('submit',submit,true);return()=>document.removeEventListener('submit',submit,true)},[open,selected,form,marketType])
- useEffect(()=>{const button=Array.from(document.querySelectorAll('.detail-card h3 button')).find(b=>b.textContent?.trim()==='PDF 업로드');if(button&&pdfName)button.textContent=`PDF: ${pdfName}`},[pdfName])
- function updateArea(key:'leaseM2'|'leasePyeong'|'exclusiveM2'|'exclusivePyeong',value:string){const n=Number(value);if(!Number.isFinite(n)){set(key,value);return}if(key.endsWith('M2'))setForm(f=>({...f,[key]:value,[key.replace('M2','Pyeong')]:String(Math.floor((n/SQM_PER_PYEONG)*10)/10)}));else setForm(f=>({...f,[key]:value,[key.replace('Pyeong','M2')]:String(Math.floor(n*SQM_PER_PYEONG*10)/10)}))}
- async function save(e:FormEvent){e.preventDefault();await persistProperty()}
- async function bulkDelete(){if(!checked.length||!confirm(`선택한 항목 ${checked.length}건을 삭제하시겠습니까?`))return;const s=createClient();const ids=[...checked];await s.from('properties').update({deleted_at:new Date().toISOString()}).in('id',ids);setUndo(ids);load()}async function restore(ids:string[]){const s=createClient();await s.from('properties').update({deleted_at:null}).in('id',ids);setUndo([]);load()}
- const table=isRent?<div className="rental-table"><div className="rental-head"><span><input type="checkbox" checked={rows.length>0&&checked.length===rows.length} onChange={toggleAll}/></span><span>관심</span><span>임대매물번호</span><span>자체관리번호</span><span>사진</span><span>분류/매물명</span><span>주소</span><span>층</span><span>면적</span><span>금액</span><span>일자</span></div>{rows.map((r,i)=><article className="rental-row" key={r.id} onClick={()=>setSelected(r)}><span><input type="checkbox" checked={checked.includes(r.id)} onClick={e=>e.stopPropagation()} onChange={()=>toggle(r.id)}/></span><span className={r.favorite?'favorite active':'favorite'}>★</span><span>{d(r).propertyNumber||1001+i}</span><span>{d(r).managementNumber||'—'}</span><span className="photo-cell">사진</span><div><small>{r.category}</small><strong>{r.name}</strong></div><span className="address">{r.address||'주소 미입력'}</span><span>{d(r).floor||'—'}</span><span>{d(r).exclusiveM2||'—'}</span><span className="amount-cell">보증금 {d(r).deposit||0}<br/>월세 {d(r).monthlyRent||0}</span><span>{r.updated_at.slice(0,10)}</span></article>)}</div>:saleTable
- const filterPanel = isRent ? <RentalFilterPanel getRows={()=>baseRowsRef.current.length ? baseRowsRef.current : rows} onApply={next=>setRows(next)} onReset={()=>{setRows(baseRowsRef.current);setChecked([])}}/> : <SaleFilterPanel getRows={()=>baseRowsRef.current.length ? baseRowsRef.current : rows} onApply={next=>setRows(next)} onReset={()=>{setRows(baseRowsRef.current);setChecked([])}}/>
- const sourceRows=baseRowsRef.current.length?baseRowsRef.current:rows
- useEffect(()=>{if(!isRent){setForm(f=>f.salePrice===f.deposit&&f.entry===f.deposit?f:{...f,salePrice:f.deposit,entry:f.deposit});if(open){const label=Array.from(document.querySelectorAll('.detail-card label')).find(el=>el.textContent?.trim().startsWith('보증금'));if(label&&label.firstChild)label.firstChild.textContent='매매가'}}},[isRent,open,form.deposit]);
- useEffect(()=>{if(!isRent&&!loading){const normalized=baseRowsRef.current.map(r=>r.data?.salePrice?r:{...r,data:{...(r.data??{}),salePrice:r.data?.entryPrice||''}});baseRowsRef.current=normalized;setRows(current=>current.map(r=>r.data?.salePrice?r:{...r,data:{...(r.data??{}),salePrice:r.data?.entryPrice||''}}))}},[isRent,loading]);
- return <div className="shell"><Sidebar/><div className="app"><TopBar marketType={marketType}/><main className="main management-main"><div className="eyebrow">PROPERTY MANAGEMENT</div><div className="management-heading"><div><h1 className="title">{title}</h1><p className="description">{description}</p></div><button className="primary-button" onClick={openNew}>+ {isRent?'임대 매물':'매매 매물'} 등록</button></div>{filterPanel}<section className="stats-row"><div><span>{isRent?'임대매물':'매매매물'}</span><strong>{sourceRows.length}</strong></div><div><span>중개중</span><strong>{sourceRows.filter(r=>r.status==='진행').length}</strong></div><div><span>관심매물</span><strong>{sourceRows.filter(r=>r.favorite).length}</strong></div></section><section className="data-panel"><div className="panel-heading"><h2>{showTrash?'휴지통':`${isRent?'임대':'매매'} 매물 목록`} <b>{showTrash?trash.length:rows.length}</b></h2><div className="panel-actions">{!showTrash&&<><span>{checked.length}건 선택</span><button className="text-button" onClick={bulkDelete}>선택 삭제</button></>}<button className="text-button" onClick={()=>setShowTrash(!showTrash)}>{showTrash?'목록으로':'휴지통'}</button></div></div>{undo.length>0&&!showTrash&&<div className="undo-bar">삭제되었습니다. <button onClick={()=>restore(undo)}>되돌리기</button></div>}{loading?<div className="empty-state">불러오는 중입니다...</div>:error?<div className="error-state">{error}</div>:showTrash?<div className="trash-list">{trash.map(r=><article className="trash-row" key={r.id}><strong>{r.name}</strong><button className="text-button" onClick={()=>restore([r.id])}>복구</button></article>)}</div>:rows.length?table:<div className="empty-state">등록된 매물이 없습니다.</div>}</section>{open&&<div className="modal-backdrop"><form className="property-detail-modal" onSubmit={save}><header className="detail-modal-head"><div><div className="eyebrow">PROPERTY DETAIL</div><h2>{selected ? selected.name : (isRent?'새 매물 등록':'새 매매 매물 등록')}</h2><p>{selected ? '저장된 매물 상세' : '임시 매물번호 · 저장 전 입력'}</p></div><div className="detail-head-actions"><Input label="담당자" value={form.manager} onChange={v=>set('manager',v)}/><button className="primary-button" type="submit">저장하고 닫기</button><button className="text-button" type="button" onClick={()=>setOpen(false)}>취소</button></div></header><div className="detail-grid"><Card title="위치정보"><div className="main-photo-box"><span>메인 사진</span></div><input type="file" accept="image/*"/><Input label="주소" value={form.address} onChange={v=>set('address',v)}/></Card><Card title="기본정보"><div className="two-col"><Input label="자체관리" value={form.self} onChange={v=>set('self',v)}/><Input label="추천용도" value={form.recommendation} onChange={v=>set('recommendation',v)}/><Input label="매물명" value={form.name} onChange={v=>set('name',v)}/><span className="field-wide"><Select label="분류" value={form.category} onChange={v=>set('category',v)} options={['상가','사무실','아파트','기타']}/><Select label="진행상태" value={form.status} onChange={v=>set('status',v)} options={['준비','진행','상황','보류','거래완료']}/></span><Input label="기타" value={form.other} onChange={v=>set('other',v)}/><Input label="고객명" value={form.customer} onChange={v=>set('customer',v)}/><Input label="전화번호" value={form.phone} onChange={v=>set('phone',v)}/></div></Card><Card title="금액정보(만원)"><div className="three-col"><Input label="보증금" value={form.deposit} onChange={v=>set('deposit',v)}/><Input label="월세" value={form.monthly} onChange={v=>set('monthly',v)}/><Input label="월세평단가" value={form.unit} onChange={v=>set('unit',v)}/><Input label="관리비" value={form.maintenance} onChange={v=>set('maintenance',v)}/><Input label="권리금" value={form.premium} onChange={v=>set('premium',v)}/><Input label="입금가" value={form.entry} onChange={v=>set('entry',v)}/><Input label="관리비부연설명" value={form.maintenanceNote} onChange={v=>set('maintenanceNote',v)}/></div></Card><Card title={isRent?'임대정보':'매물정보'}><div className="two-col"><div className="floor-line"><span>층수</span><Input label="" value={form.floorFrom} onChange={v=>set('floorFrom',v)}/><em>층 ~</em><Input label="" value={form.floorTo} onChange={v=>set('floorTo',v)}/><em>층</em></div><div className="area-line"><Input label="임대면적 m²" value={form.leaseM2} onChange={v=>updateArea('leaseM2',v)}/><Input label="임대면적 평" value={form.leasePyeong} onChange={v=>updateArea('leasePyeong',v)}/><Input label="전용면적 m²" value={form.exclusiveM2} onChange={v=>updateArea('exclusiveM2',v)}/><Input label="전용면적 평" value={form.exclusivePyeong} onChange={v=>updateArea('exclusivePyeong',v)}/></div><Select label={isRent?'냉난방':'냉방'} value={form.heating} onChange={v=>set('heating',v)} options={['','개별','중앙']}/><Select label={isRent?'가스':'난방'} value={form.gas} onChange={v=>set('gas',v)} options={['','도시가스','LPG']}/><Input label={isRent?'화장실':'방/화장실'} value={form.bathroom} onChange={v=>set('bathroom',v)}/><Select label="엘리베이터" value={form.elevator} onChange={v=>set('elevator',v)} options={['','O','X']}/><Select label="위반건축물" value={form.violation} onChange={v=>set('violation',v)} options={['','O','X']}/><Input label="기타" value={form.other} onChange={v=>set('other',v)}/></div></Card><Card title="건축물대장" action={<><input ref={pdfInputRef} type="file" accept="application/pdf" hidden onChange={handlePdf}/><button type="button" className="text-button" onClick={()=>pdfInputRef.current?.click()}>{pdfName?`PDF: ${pdfName}`:'PDF 업로드'}</button></>}><div className="two-col"><Input label="지하총층수" value={form.buildingBasement} onChange={v=>set('buildingBasement',v)}/><Input label="지상총층수" value={form.buildingGround} onChange={v=>set('buildingGround',v)}/><Input label="주용도" value={form.buildingUse} onChange={v=>set('buildingUse',v)}/><Input label="주구조" value={form.buildingStructure} onChange={v=>set('buildingStructure',v)}/><Input label="대지면적" value={form.landArea} onChange={v=>set('landArea',v)}/><Input label="연면적" value={form.totalArea} onChange={v=>set('totalArea',v)}/><Input label="건축면적" value={form.buildingArea} onChange={v=>set('buildingArea',v)}/><Input label="엘리베이터" value={form.buildingElevator} onChange={v=>set('buildingElevator',v)}/><Input label="주차대수" value={form.parking} onChange={v=>set('parking',v)}/><Input label="사용승인일" value={form.approvalDate} onChange={v=>set('approvalDate',v)}/></div><button type="button" className="collapse-button" onClick={()=>setFloorOpen(!floorOpen)}>층별현황 {floorOpen?'▲':'▼'}</button>{floorOpen&&<div className="floor-table"><div>층　 구조　 용도　 면적(㎡)</div><div>PDF 업로드 후 층별 정보가 표시됩니다.</div></div>}</Card><Card title="업무일지"><div className="worklog-input"><Select label="상담관련" value="기타" onChange={()=>{}} options={['기타','상담','현장방문','계약']}/><textarea value={form.note} onChange={e=>set('note',e.target.value)} placeholder="업무 내용을 입력하세요."/><button type="button" className="primary-button" onClick={()=>{if(form.note.trim())setLogs([form.note,...logs]);set('note','')}}>일지 저장</button></div><div className="worklog-history">{logs.length?logs.map((l,i)=><article key={`${l}-${i}`}>{l}</article>):<div className="empty-state">업무일지 기록이 없습니다.</div>}</div></Card></div></form></div>}</main></div></div>
+"use client";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { extractBuildingPdf } from "@/lib/buildingPdf";
+import {
+  BuildingFloorRow,
+  parseBuildingRegister,
+} from "@/lib/buildingRegister";
+import { extractBuildingPdfWithOcr } from "@/lib/buildingOcrFixed";
+export type MarketType = "rent" | "sale";
+type Row = {
+  id: string;
+  name: string;
+  category: string;
+  address: string;
+  status: string;
+  favorite: boolean;
+  manager: string;
+  data: Record<string, string> | null;
+  updated_at: string;
+  deleted_at?: string | null;
+};
+type F = {
+  self: string;
+  recommendation: string;
+  name: string;
+  category: string;
+  status: string;
+  other: string;
+  customer: string;
+  phone: string;
+  address: string;
+  manager: string;
+  salePrice: string;
+  deposit: string;
+  monthly: string;
+  unit: string;
+  maintenance: string;
+  premium: string;
+  entry: string;
+  maintenanceNote: string;
+  floorFrom: string;
+  floorTo: string;
+  leaseM2: string;
+  leasePyeong: string;
+  exclusiveM2: string;
+  exclusivePyeong: string;
+  heating: string;
+  gas: string;
+  bathroom: string;
+  elevator: string;
+  violation: string;
+  buildingBasement: string;
+  buildingGround: string;
+  buildingUse: string;
+  buildingStructure: string;
+  landArea: string;
+  totalArea: string;
+  buildingArea: string;
+  buildingElevator: string;
+  parking: string;
+  approvalDate: string;
+  note: string;
+  photoUrl: string;
+  buildingPdfUrl: string;
+  buildingPdfName: string;
+};
+const initial: F = {
+  self: "",
+  recommendation: "",
+  name: "새 매물",
+  category: "상가",
+  status: "준비",
+  other: "",
+  customer: "",
+  phone: "",
+  address: "",
+  manager: "",
+  salePrice: "",
+  deposit: "0",
+  monthly: "0",
+  unit: "0",
+  maintenance: "0",
+  premium: "0",
+  entry: "0",
+  maintenanceNote: "",
+  floorFrom: "1",
+  floorTo: "1",
+  leaseM2: "",
+  leasePyeong: "",
+  exclusiveM2: "0",
+  exclusivePyeong: "",
+  heating: "",
+  gas: "",
+  bathroom: "",
+  elevator: "",
+  violation: "",
+  buildingBasement: "0",
+  buildingGround: "1",
+  buildingUse: "",
+  buildingStructure: "",
+  landArea: "0",
+  totalArea: "0",
+  buildingArea: "0",
+  buildingElevator: "0",
+  parking: "0",
+  approvalDate: "",
+  note: "",
+  photoUrl: "",
+  buildingPdfUrl: "",
+  buildingPdfName: "",
+};
+const SQM_PER_PYEONG = 3.305785;
+function formatFloorRange(from?: string, to?: string, fallback?: string) {
+  const a = String(from ?? "").trim();
+  const b = String(to ?? "").trim() || a;
+  if (!a && fallback) {
+    const match = String(fallback).match(/(-?\d+)\s*층\s*[-~]\s*(-?\d+)\s*층/);
+    if (match) return formatFloorRange(match[1], match[2]);
+    return String(fallback);
+  }
+  if (!a) return "—";
+  const label = (value: string) => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return value.includes("층") ? value : `${value}층`;
+    return n < 0 ? `B${Math.abs(n)}층` : `${n}층`;
+  };
+  return a === b ? label(a) : `${label(a)} ~ ${label(b)}`;
+}
+export function Sidebar() {
+  const pathname = usePathname();
+  const active = (href: string) =>
+    href === "/"
+      ? pathname === "/"
+      : pathname === href || pathname.startsWith(`${href}/`);
+  return (
+    <aside className="sidebar">
+      <Link className="brand" href="/">
+        <span className="brand-icon">▥</span>
+        <span>
+          대톡스랜드<small>COMMERCIAL REAL ESTATE</small>
+        </span>
+      </Link>
+      <Link className="workspace" href="/">
+        <span className="avatar">D</span>
+        <span>
+          <b>나의 중개사무소</b>
+          <small>로컬 연습 공간</small>
+        </span>
+        <span className="online" />
+      </Link>
+      <div className="nav-title">WORKSPACE</div>
+      <nav className="nav" aria-label="업무 메뉴">
+        <Link className={active("/") ? "active" : ""} href="/">
+          나의 중개사무소
+        </Link>
+        <Link className={active("/rentals") ? "active" : ""} href="/rentals">
+          <span>▦</span>임대 매물관리
+        </Link>
+        <Link className={active("/sales") ? "active" : ""} href="/sales">
+          <span>▤</span>매매 매물관리
+        </Link>
+        <Link
+          className={active("/customers") ? "active" : ""}
+          href="/customers"
+        >
+          <span>♙</span>고객 장부
+        </Link>
+      </nav>
+      <div className="side-note">
+        <span className="demo-dot" />
+        가상 데이터 모드
+        <p>
+          매물과 고객을 정리하는
+          <br />
+          우리 사무소의 업무 공간
+        </p>
+      </div>
+      <div className="side-footer">
+        DAETOX LAND <span>기본 MVP v0.3</span>
+      </div>
+    </aside>
+  );
+}
+export function TopBar({ marketType }: { marketType?: MarketType }) {
+  const pathname = usePathname();
+  const label =
+    pathname === "/sales"
+      ? "매매 매물관리"
+      : pathname === "/customers"
+        ? "고객 장부"
+        : pathname === "/rentals"
+          ? "임대 매물관리"
+          : pathname.startsWith("/briefing")
+            ? "브리핑"
+            : "나의 중개사무소";
+  return (
+    <header className="topbar">
+      <div className="breadcrumb">
+        업무 공간 <span>/</span> <strong>{label}</strong>
+      </div>
+      <div className="topbar-actions">
+        <span>CSV 내보내기</span>
+        <span>백업 저장</span>
+        <span>백업 복원</span>
+        <span className="demo-badge">● 가상 데이터 · 연습용</span>
+      </div>
+    </header>
+  );
+}
+function Input({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label>
+      {label}
+      <input value={value} onChange={(e) => onChange(e.target.value)} />
+    </label>
+  );
+}
+function Select({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+}) {
+  return (
+    <label>
+      {label}
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map((o) => (
+          <option key={o}>{o}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+function Card({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="detail-card">
+      <h3>
+        {title}
+        {action}
+      </h3>
+      <div className="detail-card-body">{children}</div>
+    </section>
+  );
+}
+type RentalFilter = {
+  category: string;
+  status: string;
+  region: string;
+  address: string;
+  areaUnit: "sqm" | "pyeong";
+  areaMin: string;
+  areaMax: string;
+  floorMin: string;
+  floorMax: string;
+  depositMin: string;
+  depositMax: string;
+  rentMin: string;
+  rentMax: string;
+  favorite: string;
+  search: string;
+};
+const emptyRentalFilter: RentalFilter = {
+  category: "",
+  status: "",
+  region: "",
+  address: "",
+  areaUnit: "sqm",
+  areaMin: "",
+  areaMax: "",
+  floorMin: "",
+  floorMax: "",
+  depositMin: "",
+  depositMax: "",
+  rentMin: "",
+  rentMax: "",
+  favorite: "",
+  search: "",
+};
+function numberValue(v: unknown) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+function flexibleNumber(v: unknown) {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  const text = String(v ?? "")
+    .replace(/,/g, "")
+    .trim();
+  if (!text) return null;
+  const eok = text.match(/(\d+(?:\.\d+)?)\s*억/);
+  const man = text.match(/(\d+(?:\.\d+)?)\s*만/);
+  if (eok) return Number(eok[1]) * 10000 + (man ? Number(man[1]) : 0);
+  const n = Number(text.replace(/[^\d.-]/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+function rangeMatch(v: number | null, min: string, max: string) {
+  if (min && (v === null || v < Number(min))) return false;
+  if (max && (v === null || v > Number(max))) return false;
+  return true;
+}
+function matchesRentalFilter(row: Row, f: RentalFilter) {
+  const x = row.data ?? {};
+  const q = f.search.trim().toLowerCase();
+  const hay = [row.name, row.address, x.note, x.other, x.recommendation]
+    .join(" ")
+    .toLowerCase();
+  if (q && !hay.includes(q)) return false;
+  const status =
+    f.status === "중개중"
+      ? "진행"
+      : f.status === "계약완료"
+        ? "거래완료"
+        : f.status;
+  if (f.category && row.category !== f.category) return false;
+  if (status && row.status !== status) return false;
+  if (f.region && !(row.address || "").startsWith(f.region)) return false;
+  if (
+    f.address &&
+    !(row.address || "").toLowerCase().includes(f.address.toLowerCase())
+  )
+    return false;
+  if (f.favorite === "yes" && !row.favorite) return false;
+  const area = numberValue(x.exclusiveM2);
+  const areaVal =
+    area === null ? null : f.areaUnit === "pyeong" ? area / 3.305785 : area;
+  const floor =
+    numberValue(x.floorFrom) ??
+    numberValue((x.floor || "").match?.(/-?\d+/)?.[0]);
+  const deposit = numberValue(x.deposit);
+  const rent = numberValue(x.monthlyRent);
+  const range = (v: number | null, min: string, max: string) =>
+    !min || (v !== null && v >= Number(min))
+      ? !max || (v !== null && v <= Number(max))
+      : false;
+  if (
+    !range(areaVal, f.areaMin, f.areaMax) ||
+    !range(floor, f.floorMin, f.floorMax) ||
+    !range(deposit, f.depositMin, f.depositMax) ||
+    !range(rent, f.rentMin, f.rentMax)
+  )
+    return false;
+  return true;
+}
+function RentalFilterPanel({
+  getRows,
+  onApply,
+  onReset,
+}: {
+  getRows: () => Row[];
+  onApply: (rows: Row[], filter: RentalFilter) => void;
+  onReset: () => void;
+}) {
+  const [f, setF] = useState<RentalFilter>(emptyRentalFilter);
+  const rows = getRows();
+  const regions = Array.from(
+    new Set(rows.map((r) => (r.address || "").split(/\s+/)[0]).filter(Boolean)),
+  );
+  const change = (k: keyof RentalFilter, v: string) =>
+    setF((x) => ({ ...x, [k]: v }));
+  const apply = () => {
+    const latest = getRows();
+    onApply(
+      latest.filter((r) => matchesRentalFilter(r, f)),
+      f,
+    );
+  };
+  const reset = () => {
+    setF(emptyRentalFilter);
+    onReset();
+  };
+  return (
+    <section className="filter-panel rental-filter-panel">
+      <div className="filter-top">
+        <h2>
+          매물 찾기 <span>FILTER</span>
+        </h2>
+        <button type="button" className="text-button" onClick={reset}>
+          ↺ 필터 초기화
+        </button>
+      </div>
+      <div className="rental-filter-grid">
+        <label>
+          분류
+          <select
+            value={f.category}
+            onChange={(e) => change("category", e.target.value)}
+          >
+            <option value="">전체 분류</option>
+            <option>상가</option>
+            <option>사무실</option>
+            <option>상가주택</option>
+            <option>아파트</option>
+            <option>기타</option>
+          </select>
+        </label>
+        <label>
+          진행 상태
+          <select
+            value={f.status}
+            onChange={(e) => change("status", e.target.value)}
+          >
+            <option value="">전체 상태</option>
+            <option>중개중</option>
+            <option>보류</option>
+            <option>계약완료</option>
+          </select>
+        </label>
+        <label>
+          지역
+          <select
+            value={f.region}
+            onChange={(e) => change("region", e.target.value)}
+          >
+            <option value="">전체 지역</option>
+            {regions.map((r) => (
+              <option key={r}>{r}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          주소
+          <input
+            value={f.address}
+            onChange={(e) => change("address", e.target.value)}
+            placeholder="동·도로명·번지 검색"
+          />
+        </label>
+        <label className="filter-range">
+          전용면적{" "}
+          <select
+            value={f.areaUnit}
+            onChange={(e) => change("areaUnit", e.target.value)}
+          >
+            <option value="sqm">㎡</option>
+            <option value="pyeong">평</option>
+          </select>
+          <span>
+            <input
+              value={f.areaMin}
+              onChange={(e) => change("areaMin", e.target.value)}
+              placeholder="최소"
+              inputMode="decimal"
+            />
+            <i>~</i>
+            <input
+              value={f.areaMax}
+              onChange={(e) => change("areaMax", e.target.value)}
+              placeholder="최대"
+              inputMode="decimal"
+            />
+          </span>
+        </label>
+        <label className="filter-range">
+          임대층 <small>지하: 음수 / 1층: 1</small>
+          <span>
+            <input
+              value={f.floorMin}
+              onChange={(e) => change("floorMin", e.target.value)}
+              placeholder="최소층"
+              inputMode="numeric"
+            />
+            <i>~</i>
+            <input
+              value={f.floorMax}
+              onChange={(e) => change("floorMax", e.target.value)}
+              placeholder="최대층"
+              inputMode="numeric"
+            />
+          </span>
+        </label>
+        <label className="filter-range">
+          보증금 <small>만원</small>
+          <span>
+            <input
+              value={f.depositMin}
+              onChange={(e) => change("depositMin", e.target.value)}
+              placeholder="최소"
+              inputMode="numeric"
+            />
+            <i>~</i>
+            <input
+              value={f.depositMax}
+              onChange={(e) => change("depositMax", e.target.value)}
+              placeholder="최대"
+              inputMode="numeric"
+            />
+          </span>
+        </label>
+        <label className="filter-range">
+          월세 <small>만원</small>
+          <span>
+            <input
+              value={f.rentMin}
+              onChange={(e) => change("rentMin", e.target.value)}
+              placeholder="최소"
+              inputMode="numeric"
+            />
+            <i>~</i>
+            <input
+              value={f.rentMax}
+              onChange={(e) => change("rentMax", e.target.value)}
+              placeholder="최대"
+              inputMode="numeric"
+            />
+          </span>
+        </label>
+        <label>
+          관심 매물
+          <select
+            value={f.favorite}
+            onChange={(e) => change("favorite", e.target.value)}
+          >
+            <option value="">전체 매물</option>
+            <option value="yes">관심 매물만</option>
+          </select>
+        </label>
+        <div className="filter-search">
+          <label>
+            <span>⌕</span>
+            <input
+              value={f.search}
+              onChange={(e) => change("search", e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") apply();
+              }}
+              placeholder="매물명·주소·메모 검색"
+            />
+          </label>
+          <button type="button" className="primary-button" onClick={apply}>
+            검색
+          </button>
+        </div>
+      </div>
+      <div className="filter-bottom">
+        <span>
+          {f.search ||
+          f.category ||
+          f.status ||
+          f.region ||
+          f.address ||
+          f.favorite
+            ? "현재 필터를 적용하고 있습니다"
+            : "전체 매물을 보고 있습니다"}
+        </span>
+        <span>금액: 만원 · 면적: 전용 기준</span>
+      </div>
+    </section>
+  );
+}
+type SaleFilter = {
+  category: string;
+  status: string;
+  region: string;
+  address: string;
+  areaUnit: "sqm" | "pyeong";
+  areaMin: string;
+  areaMax: string;
+  floorMin: string;
+  floorMax: string;
+  saleMin: string;
+  saleMax: string;
+  favorite: string;
+  recommendation: string;
+  search: string;
+};
+const emptySaleFilter: SaleFilter = {
+  category: "",
+  status: "",
+  region: "",
+  address: "",
+  areaUnit: "sqm",
+  areaMin: "",
+  areaMax: "",
+  floorMin: "",
+  floorMax: "",
+  saleMin: "",
+  saleMax: "",
+  favorite: "",
+  recommendation: "",
+  search: "",
+};
+function matchesSaleFilter(row: Row, f: SaleFilter) {
+  const x = row.data ?? {};
+  const q = f.search.trim().toLowerCase();
+  const hay = [
+    row.name,
+    row.address,
+    x.note,
+    x.other,
+    x.recommendation,
+    x.salePrice,
+  ]
+    .join(" ")
+    .toLowerCase();
+  if (q && !hay.includes(q)) return false;
+  const status =
+    f.status === "중개중"
+      ? "진행"
+      : f.status === "계약완료"
+        ? "거래완료"
+        : f.status;
+  if (f.category && row.category !== f.category) return false;
+  if (status && row.status !== status) return false;
+  if (f.region && !(row.address || "").startsWith(f.region)) return false;
+  if (
+    f.address &&
+    !(row.address || "").toLowerCase().includes(f.address.toLowerCase())
+  )
+    return false;
+  if (f.favorite === "yes" && !row.favorite) return false;
+  if (f.recommendation && x.recommendation !== f.recommendation) return false;
+  const area = numberValue(x.exclusiveM2 ?? x.exclusiveArea);
+  const areaVal =
+    area === null
+      ? null
+      : f.areaUnit === "pyeong"
+        ? area / SQM_PER_PYEONG
+        : area;
+  const floor =
+    numberValue(x.floorFrom) ??
+    numberValue((x.floor || "").match?.(/-?\d+/)?.[0]);
+  const sale = flexibleNumber(x.salePrice);
+  return (
+    rangeMatch(areaVal, f.areaMin, f.areaMax) &&
+    rangeMatch(floor, f.floorMin, f.floorMax) &&
+    rangeMatch(sale, f.saleMin, f.saleMax)
+  );
+}
+function SaleFilterPanel({
+  getRows,
+  onApply,
+  onReset,
+}: {
+  getRows: () => Row[];
+  onApply: (rows: Row[], filter: SaleFilter) => void;
+  onReset: () => void;
+}) {
+  const [f, setF] = useState<SaleFilter>(emptySaleFilter);
+  const rows = getRows();
+  const regions = Array.from(
+    new Set(rows.map((r) => (r.address || "").split(/\s+/)[0]).filter(Boolean)),
+  );
+  const recommendations = Array.from(
+    new Set(rows.map((r) => r.data?.recommendation || "").filter(Boolean)),
+  );
+  const change = (k: keyof SaleFilter, v: string) =>
+    setF((x) => ({ ...x, [k]: v }));
+  const apply = () => {
+    const latest = getRows();
+    onApply(
+      latest.filter((r) => matchesSaleFilter(r, f)),
+      f,
+    );
+  };
+  const reset = () => {
+    setF(emptySaleFilter);
+    onReset();
+  };
+  return (
+    <section className="filter-panel sale-filter-panel">
+      <div className="filter-top">
+        <h2>
+          매물 찾기 <span>FILTER</span>
+        </h2>
+        <button type="button" className="text-button" onClick={reset}>
+          ↺ 필터 초기화
+        </button>
+      </div>
+      <div className="rental-filter-grid">
+        <label>
+          분류
+          <select
+            value={f.category}
+            onChange={(e) => change("category", e.target.value)}
+          >
+            <option value="">전체 분류</option>
+            <option>상가</option>
+            <option>사무실</option>
+            <option>아파트</option>
+            <option>기타</option>
+          </select>
+        </label>
+        <label>
+          진행 상태
+          <select
+            value={f.status}
+            onChange={(e) => change("status", e.target.value)}
+          >
+            <option value="">전체 상태</option>
+            <option>중개중</option>
+            <option>보류</option>
+            <option>계약완료</option>
+          </select>
+        </label>
+        <label>
+          지역
+          <select
+            value={f.region}
+            onChange={(e) => change("region", e.target.value)}
+          >
+            <option value="">전체 지역</option>
+            {regions.map((r) => (
+              <option key={r}>{r}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          주소
+          <input
+            value={f.address}
+            onChange={(e) => change("address", e.target.value)}
+            placeholder="동·도로명·번지 검색"
+          />
+        </label>
+        <label className="filter-range">
+          전용면적{" "}
+          <select
+            value={f.areaUnit}
+            onChange={(e) => change("areaUnit", e.target.value)}
+          >
+            <option value="sqm">㎡</option>
+            <option value="pyeong">평</option>
+          </select>
+          <span>
+            <input
+              value={f.areaMin}
+              onChange={(e) => change("areaMin", e.target.value)}
+              placeholder="최소"
+              inputMode="decimal"
+            />
+            <i>~</i>
+            <input
+              value={f.areaMax}
+              onChange={(e) => change("areaMax", e.target.value)}
+              placeholder="최대"
+              inputMode="decimal"
+            />
+          </span>
+        </label>
+        <label className="filter-range">
+          층 <small>지하: 음수 / 1층: 1</small>
+          <span>
+            <input
+              value={f.floorMin}
+              onChange={(e) => change("floorMin", e.target.value)}
+              placeholder="최소층"
+              inputMode="numeric"
+            />
+            <i>~</i>
+            <input
+              value={f.floorMax}
+              onChange={(e) => change("floorMax", e.target.value)}
+              placeholder="최대층"
+              inputMode="numeric"
+            />
+          </span>
+        </label>
+        <label className="filter-range">
+          매매가 <small>만원</small>
+          <span>
+            <input
+              value={f.saleMin}
+              onChange={(e) => change("saleMin", e.target.value)}
+              placeholder="최소"
+              inputMode="numeric"
+            />
+            <i>~</i>
+            <input
+              value={f.saleMax}
+              onChange={(e) => change("saleMax", e.target.value)}
+              placeholder="최대"
+              inputMode="numeric"
+            />
+          </span>
+        </label>
+        <label>
+          추천용도
+          <select
+            value={f.recommendation}
+            onChange={(e) => change("recommendation", e.target.value)}
+          >
+            <option value="">전체 추천용도</option>
+            {recommendations.map((r) => (
+              <option key={r}>{r}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          관심 매물
+          <select
+            value={f.favorite}
+            onChange={(e) => change("favorite", e.target.value)}
+          >
+            <option value="">전체 매물</option>
+            <option value="yes">관심 매물만</option>
+          </select>
+        </label>
+        <div className="filter-search">
+          <label>
+            <span>⌕</span>
+            <input
+              value={f.search}
+              onChange={(e) => change("search", e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") apply();
+              }}
+              placeholder="매물명·주소·메모 검색"
+            />
+          </label>
+          <button type="button" className="primary-button" onClick={apply}>
+            검색
+          </button>
+        </div>
+      </div>
+      <div className="filter-bottom">
+        <span>
+          {f.search ||
+          f.category ||
+          f.status ||
+          f.region ||
+          f.address ||
+          f.favorite ||
+          f.recommendation
+            ? "현재 필터를 적용하고 있습니다"
+            : "전체 매물을 보고 있습니다"}
+        </span>
+        <span>금액: 만원 · 면적: 전용 기준</span>
+      </div>
+    </section>
+  );
+}
+export function PropertyManagement({
+  marketType,
+  title,
+  description,
+}: {
+  marketType: MarketType;
+  title: string;
+  description: string;
+}) {
+  const isRent = marketType === "rent";
+  const [rows, setRows] = useState<Row[]>([]);
+  const baseRowsRef = useRef<Row[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<Row | null>(null);
+  const [checked, setChecked] = useState<string[]>([]);
+  const [showTrash, setShowTrash] = useState(false);
+  const [trash, setTrash] = useState<Row[]>([]);
+  const [undo, setUndo] = useState<string[]>([]);
+  const [form, setForm] = useState<F>(initial);
+  const [floorOpen, setFloorOpen] = useState(false);
+  const [floorRows, setFloorRows] = useState<BuildingFloorRow[]>([]);
+  const [logs, setLogs] = useState<string[]>([]);
+  const [pdfName, setPdfName] = useState("");
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const pdfInputRef = useRef<HTMLInputElement | null>(null);
+  const set = (key: keyof F, v: string) => setForm((f) => ({ ...f, [key]: v }));
+  const d = (r: Row | null) => r?.data ?? {};
+  const toggle = (id: string) =>
+    setChecked((c) =>
+      c.includes(id) ? c.filter((x) => x !== id) : [...c, id],
+    );
+  const toggleAll = () =>
+    setChecked(checked.length === rows.length ? [] : rows.map((r) => r.id));
+  async function toggleFavorite(id: string) {
+    const row =
+      rows.find((r) => r.id === id) ||
+      baseRowsRef.current.find((r) => r.id === id);
+    if (!row) return;
+    const favorite = !row.favorite;
+    row.favorite = favorite;
+    baseRowsRef.current.forEach((r) => {
+      if (r.id === id) r.favorite = favorite;
+    });
+    setRows((current) => current.map((r) => (r.id === id ? r : { ...r })));
+    const s = createClient();
+    await s.from("properties").update({ favorite }).eq("id", id);
+  }
+  async function load() {
+    const s = createClient();
+    const a = await s
+      .from("properties")
+      .select(
+        "id,name,category,address,status,favorite,manager,data,updated_at,deleted_at",
+      )
+      .eq("market_type", marketType)
+      .is("deleted_at", null)
+      .order("updated_at", { ascending: false });
+    const t = await s
+      .from("properties")
+      .select(
+        "id,name,category,address,status,favorite,manager,data,updated_at,deleted_at",
+      )
+      .eq("market_type", marketType)
+      .not("deleted_at", "is", null)
+      .order("deleted_at", { ascending: false });
+    if (a.error || t.error) setError("매물 데이터를 불러오지 못했습니다.");
+    else {
+      const nextRows = ((a.data ?? []) as Row[]).map((r) =>
+        marketType === "sale" && !r.data?.salePrice
+          ? { ...r, data: { ...(r.data ?? {}), salePrice: r.data?.entryPrice || "" } }
+          : r,
+      );
+      baseRowsRef.current = nextRows;
+      setRows(nextRows);
+      setTrash((t.data ?? []) as Row[]);
+      setChecked([]);
+    }
+    setLoading(false);
+  }
+  useEffect(() => {
+    load();
+  }, [marketType]);
+  useEffect(() => {
+    if (selected) {
+      setForm(formFromRow(selected));
+      setOpen(true);
+    }
+  }, [selected]);
+  useEffect(() => {
+    const h = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest("input,button,a,select,textarea,.favorite")) return;
+      const el = target.closest(".rental-row,.property-row");
+      if (!el) return;
+      const all = Array.from(
+        document.querySelectorAll(".rental-row,.property-row"),
+      );
+      const i = all.indexOf(el);
+      if (i >= 0 && rows[i]) setSelected(rows[i]);
+    };
+    document.addEventListener("click", h, true);
+    return () => document.removeEventListener("click", h, true);
+  }, [rows]);
+  useEffect(() => {
+    const cells = document.querySelectorAll<HTMLElement>(
+      ".rental-row > span:nth-child(8)",
+    );
+    rows.forEach((row, i) => {
+      const x = d(row);
+      if (cells[i])
+        cells[i].textContent = formatFloorRange(
+          x.floorFrom,
+          x.floorTo,
+          x.floor,
+        );
+    });
+  }, [rows, isRent]);
+  useEffect(() => {
+    if (!open) return;
+    const host = document.querySelector(".detail-head-actions");
+    if (host && !host.querySelector(".briefing-button")) {
+      const cancel = Array.from(host.querySelectorAll("button")).find(
+        (b) => b.textContent?.trim() === "취소",
+      );
+      if (cancel) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "text-button briefing-button";
+        btn.textContent = "브리핑";
+        btn.disabled = !selected;
+        btn.onclick = () => {
+          if (selected)
+            window.open(
+              `/briefing/${selected.id}`,
+              "_blank",
+              "noopener,noreferrer",
+            );
+        };
+        host.insertBefore(btn, cancel);
+      }
+    }
+    const pdf = Array.from(
+      document.querySelectorAll(".detail-card h3 + .detail-card-body"),
+    ).map((x) =>
+      x.parentElement?.querySelector("h3 + .detail-card-body"),
+    ).length;
+    return () => {
+      void pdf;
+    };
+  }, [open, selected]);
+  useEffect(() => {
+    if (!open) return;
+    const h = (event: MouseEvent) => {
+      const t = event.target;
+      if (!(t instanceof Element)) return;
+      const button = t.closest("button");
+      if (!button) return;
+      const label = button.textContent?.trim();
+      if (label === "PDF 업로드") {
+        event.preventDefault();
+        event.stopPropagation();
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "application/pdf";
+        input.onchange = () => {
+          const file = input.files?.[0];
+          if (file) setPdfName(file.name);
+        };
+        input.click();
+      }
+      if (label === "일지 저장") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (form.note.trim()) {
+          setLogs((current) => [
+            `${new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium", timeStyle: "short" }).format(new Date())} · ${form.note.trim()}`,
+            ...current,
+          ]);
+          set("note", "");
+        }
+      }
+    };
+    document.addEventListener("click", h, true);
+    return () => document.removeEventListener("click", h, true);
+  }, [open, form.note]);
+  useEffect(() => {
+    if (!open) return;
+    const add = () => {
+      const host = document.querySelector(".detail-head-actions");
+      if (!host || host.querySelector(".briefing-button")) return;
+      const cancel = Array.from(host.querySelectorAll("button")).find(
+        (b) => b.textContent?.trim() === "취소",
+      );
+      if (!cancel) return;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "text-button briefing-button";
+      btn.textContent = "브리핑";
+      btn.disabled = !selected;
+      btn.onclick = () => {
+        if (selected)
+          window.open(
+            `/briefing/${selected.id}`,
+            "_blank",
+            "noopener,noreferrer",
+          );
+      };
+      host.insertBefore(btn, cancel);
+    };
+    add();
+    const observer = new MutationObserver(add);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [open, selected]);
+  function openNew() {
+    setSelected(null);
+    setForm(initial);
+    setLogs([]);
+    setFloorRows([]);
+    setPdfName("");
+    setPhotoFile(null);
+    setPdfFile(null);
+    setFloorOpen(false);
+    setOpen(true);
+  }
+  function formFromRow(r: Row): F {
+    const x = d(r);
+    return {
+      ...initial,
+      name: r.name,
+      category: r.category,
+      status: r.status,
+      address: r.address,
+      manager: r.manager || "",
+      self: x.self || "",
+      recommendation: x.recommendation || "",
+      other: x.other || "",
+      customer: x.customer || "",
+      phone: x.phone || "",
+      salePrice: x.salePrice || x.entryPrice || "",
+      deposit: x.deposit || "0",
+      monthly: x.monthlyRent || "0",
+      unit: x.unitPrice || "0",
+      maintenance: x.maintenance || "0",
+      premium: x.premium || "0",
+      entry: x.entryPrice || "0",
+      maintenanceNote: x.maintenanceNote || "",
+      floorFrom: x.floorFrom || "1",
+      floorTo: x.floorTo || "1",
+      leaseM2: x.leaseM2 || "",
+      leasePyeong: x.leasePyeong || "",
+      exclusiveM2: x.exclusiveM2 || "",
+      exclusivePyeong: x.exclusivePyeong || "",
+      heating: x.heating || "",
+      gas: x.gas || "",
+      bathroom: x.bathroom || "",
+      elevator: x.elevator || "",
+      violation: x.violation || "",
+      buildingBasement: x.buildingBasement || "0",
+      buildingGround: x.buildingGround || "1",
+      buildingUse: x.buildingUse || "",
+      buildingStructure: x.buildingStructure || "",
+      landArea: x.landArea || "0",
+      totalArea: x.totalArea || "0",
+      buildingArea: x.buildingArea || "0",
+      buildingElevator: x.buildingElevator || "0",
+      parking: x.parking || "0",
+      approvalDate: x.approvalDate || "",
+      note: "",
+      photoUrl: x.photoUrl || "",
+    };
+  }
+  useEffect(() => {
+    if (!isRent) return;
+    const inject = () => {
+      const head = document.querySelector(".rental-head");
+      if (head && !head.querySelector(".recommendation-head")) {
+        const cell = document.createElement("span");
+        cell.className = "recommendation-head";
+        cell.textContent = "추천용도";
+        head.insertBefore(cell, head.lastElementChild);
+      }
+      document.querySelectorAll(".rental-row").forEach((row) => {
+        if (row.querySelector(".recommendation-cell")) return;
+        const i = Array.from(document.querySelectorAll(".rental-row")).indexOf(
+          row,
+        );
+        const cell = document.createElement("span");
+        cell.className = "recommendation-cell";
+        cell.textContent = d(rows[i])?.recommendation || "—";
+        row.insertBefore(cell, row.lastElementChild);
+      });
+    };
+    inject();
+    const observer = new MutationObserver(inject);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [rows, isRent]);
+  useEffect(() => {
+    document.querySelectorAll(".rental-row").forEach((row, index) => {
+      const cell = row.querySelector(".photo-cell");
+      const url = d(rows[index])?.photoUrl;
+      if (cell && url && !cell.querySelector("img")) {
+        const img = document.createElement("img");
+        img.src = url;
+        img.alt = "매물 사진";
+        cell.replaceChildren(img);
+      }
+    });
+  }, [rows, isRent]);
+  useEffect(() => {
+    if (!open) return;
+    const host = document.querySelector(".main-photo-box");
+    if (!host) return;
+    host.replaceChildren();
+    if (form.photoUrl) {
+      const img = document.createElement("img");
+      img.src = form.photoUrl;
+      img.alt = "메인 사진";
+      host.append(img);
+    } else {
+      const label = document.createElement("span");
+      label.textContent = "메인 사진";
+      host.append(label);
+    }
+  }, [open, form.photoUrl]);
+  useEffect(() => {
+    const h = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const favorite = target.closest(".favorite");
+      if (!favorite) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const row = favorite.closest(".rental-row");
+      if (!row) return;
+      const i = Array.from(document.querySelectorAll(".rental-row")).indexOf(
+        row,
+      );
+      if (i >= 0 && rows[i]) toggleFavorite(rows[i].id);
+    };
+    document.addEventListener("click", h, true);
+    return () => document.removeEventListener("click", h, true);
+  }, [rows, isRent]);
+  async function handlePdf(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPdfName(file.name);
+    setPdfFile(file);
+    try {
+      const parsed = await parseBuildingRegister(file);
+      setForm((f) => ({
+        ...f,
+        approvalDate: parsed.fields.approvalDate || f.approvalDate,
+        buildingBasement: parsed.fields.buildingBasement || f.buildingBasement,
+        buildingGround: parsed.fields.buildingGround || f.buildingGround,
+        buildingUse: parsed.fields.buildingUse || f.buildingUse,
+        buildingStructure:
+          parsed.fields.buildingStructure || f.buildingStructure,
+        landArea: parsed.fields.landArea || f.landArea,
+        totalArea: parsed.fields.totalArea || f.totalArea,
+        buildingArea: parsed.fields.buildingArea || f.buildingArea,
+        buildingElevator: parsed.fields.buildingElevator || f.buildingElevator,
+        parking: parsed.fields.parking || f.parking,
+        buildingPdfName: file.name,
+      }));
+    } catch (error) {
+      try {
+        const parsed = await extractBuildingPdfWithOcr(file);
+        setForm((f) => ({
+          ...f,
+          approvalDate: parsed.fields.approvalDate || f.approvalDate,
+          buildingBasement:
+            parsed.fields.buildingBasement || f.buildingBasement,
+          buildingGround: parsed.fields.buildingGround || f.buildingGround,
+          buildingUse: parsed.fields.buildingUse || f.buildingUse,
+          buildingStructure:
+            parsed.fields.buildingStructure || f.buildingStructure,
+          landArea: parsed.fields.landArea || f.landArea,
+          totalArea: parsed.fields.totalArea || f.totalArea,
+          buildingArea: parsed.fields.buildingArea || f.buildingArea,
+          buildingElevator:
+            parsed.fields.buildingElevator || f.buildingElevator,
+          parking: parsed.fields.parking || f.parking,
+          buildingPdfName: file.name,
+        }));
+      } catch (ocrError) {
+        setError(
+          `PDF 텍스트/OCR을 읽지 못했습니다. ${ocrError instanceof Error ? ocrError.message : ""}`,
+        );
+      }
+    }
+  }
+  useEffect(() => {
+    if (!open) return;
+    const h = (event: Event) => {
+      const input = event.target;
+      if (
+        !(input instanceof HTMLInputElement) ||
+        input.type !== "file" ||
+        input.accept !== "image/*"
+      )
+        return;
+      const file = input.files?.[0];
+      if (file) {
+        setPhotoFile(file);
+        set("photoUrl", URL.createObjectURL(file));
+      }
+    };
+    document.addEventListener("change", h, true);
+    return () => document.removeEventListener("change", h, true);
+  }, [open]);
+  useEffect(() => {
+    if (!open || !pdfFile) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const parsed = await parseBuildingRegister(pdfFile);
+        if (cancelled) return;
+        setFloorRows(parsed.floors);
+        const latestViolation = parsed.text.lastIndexOf("위반건축물");
+        const latestRelease = parsed.text.lastIndexOf("위반건축물 해제");
+        if (latestViolation >= 0)
+          set("violation", latestRelease > latestViolation ? "X" : "O");
+      } catch {
+        setFloorRows([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, pdfFile]);
+  useEffect(() => {
+    if (!open || !floorOpen) return;
+    const table = document.querySelector(".floor-table");
+    if (!table) return;
+    table.replaceChildren();
+    if (!floorRows.length) {
+      const empty = document.createElement("div");
+      empty.textContent = "PDF에서 층별 정보가 추출되지 않았습니다.";
+      table.append(empty);
+      return;
+    }
+    const head = document.createElement("div");
+    head.className = "floor-table-head";
+    ["층", "구조", "용도", "면적(㎡)"].forEach((label) => {
+      const cell = document.createElement("span");
+      cell.textContent = label;
+      head.append(cell);
+    });
+    table.append(head);
+    floorRows.forEach((row) => {
+      const line = document.createElement("div");
+      line.className = "floor-table-row";
+      [row.floor, row.structure, row.usage, row.area].forEach((value) => {
+        const cell = document.createElement("span");
+        cell.textContent = value;
+        line.append(cell);
+      });
+      table.append(line);
+    });
+  }, [open, floorOpen, floorRows]);
+  useEffect(() => {
+    if (!selected || !floorRows.length) return;
+    const s = createClient();
+    const next = {
+      ...(selected.data ?? {}),
+      floorRows,
+      buildingPdfName: form.buildingPdfName,
+      buildingPdfUrl: form.buildingPdfUrl,
+      buildingBasement: form.buildingBasement,
+      buildingGround: form.buildingGround,
+      buildingUse: form.buildingUse,
+      buildingStructure: form.buildingStructure,
+      landArea: form.landArea,
+      totalArea: form.totalArea,
+      buildingArea: form.buildingArea,
+      buildingElevator: form.buildingElevator,
+      parking: form.parking,
+      approvalDate: form.approvalDate,
+      violation: form.violation,
+    };
+    s.from("properties")
+      .update({ data: next })
+      .eq("id", selected.id)
+      .then((result) => {
+        if (result.error) setError(result.error.message);
+      });
+  }, [
+    selected,
+    floorRows,
+    form.buildingPdfName,
+    form.buildingPdfUrl,
+    form.buildingBasement,
+    form.buildingGround,
+    form.buildingUse,
+    form.buildingStructure,
+    form.landArea,
+    form.totalArea,
+    form.buildingArea,
+    form.buildingElevator,
+    form.parking,
+    form.approvalDate,
+    form.violation,
+  ]);
+  useEffect(() => {
+    if (selected) {
+      setForm(formFromRow(selected));
+      const saved = (selected.data?.floorRows ?? []) as BuildingFloorRow[];
+      setFloorRows(Array.isArray(saved) ? saved : []);
+    }
+  }, [selected]);
+  useEffect(() => {
+    if (!loading && baseRowsRef.current.length === 0 && rows.length)
+      baseRowsRef.current = rows;
+  }, [loading, rows]);
+  useEffect(() => {}, []);
+  const saleTable = (
+    <div className="rental-table sale-table">
+      <div className="rental-head">
+        <span>
+          <input
+            type="checkbox"
+            checked={rows.length > 0 && checked.length === rows.length}
+            onChange={toggleAll}
+          />
+        </span>
+        <span>관심</span>
+        <span>매매매물번호</span>
+        <span>자체관리번호</span>
+        <span>사진</span>
+        <span>분류/매물명</span>
+        <span>주소</span>
+        <span>층</span>
+        <span>면적(평)</span>
+        <span>금액(만원)</span>
+        <span>추천용도</span>
+        <span>일자</span>
+      </div>
+      {rows.map((r, i) => {
+        const x = d(r);
+        const floorFrom = x.floorFrom || x.floor || "";
+        const floorTo = x.floorTo || floorFrom;
+        const floor =
+          floorFrom && floorTo && floorFrom !== floorTo
+            ? `${floorFrom}층-${floorTo}층`
+            : floorFrom
+              ? `${floorFrom}층`
+              : "—";
+        const area = numberValue(x.exclusiveM2 ?? x.exclusiveArea);
+        const pyeong =
+          area === null
+            ? "—"
+            : String(Math.floor((area / SQM_PER_PYEONG) * 10) / 10).replace(
+                /\.0$/,
+                "",
+              );
+        return (
+          <article
+            className="rental-row"
+            key={r.id}
+            onClick={() => setSelected(r)}
+          >
+            <span>
+              <input
+                type="checkbox"
+                checked={checked.includes(r.id)}
+                onClick={(e) => e.stopPropagation()}
+                onChange={() => toggle(r.id)}
+              />
+            </span>
+            <span className={r.favorite ? "favorite active" : "favorite"}>
+              ★
+            </span>
+            <span>{x.propertyNumber || 2001 + i}</span>
+            <span>{x.managementNumber || "—"}</span>
+            <span className="photo-cell">사진</span>
+            <div>
+              <small>{r.category}</small>
+              <strong>{r.name}</strong>
+            </div>
+            <span className="address">{r.address || "주소 미입력"}</span>
+            <span>{floor}</span>
+            <span>{pyeong}</span>
+            <span className="amount-cell">{x.salePrice || "미입력"}</span>
+            <span>{x.recommendation || "—"}</span>
+            <span>{r.updated_at.slice(0, 10)}</span>
+          </article>
+        );
+      })}
+    </div>
+  );
+  async function uploadPhoto(
+    s: ReturnType<typeof createClient>,
+    userId: string,
+  ) {
+    if (!photoFile) return form.photoUrl;
+    const folder = `${userId}/${selected?.id || crypto.randomUUID()}`;
+    const path = `${folder}/${Date.now()}-${photoFile.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    const bucket = s.storage.from("property-photos");
+    const upload = await bucket.upload(path, photoFile, {
+      upsert: true,
+      contentType: photoFile.type,
+    });
+    if (upload.error) {
+      /* Keep the feature usable while a project has not yet created the Storage bucket. The data URL is persisted in properties.data and remains visible in lists/briefings after refresh. */ return await new Promise<string>(
+        (resolve) => {
+          const reader = new FileReader();
+          reader.onload = () =>
+            resolve(
+              typeof reader.result === "string" ? reader.result : form.photoUrl,
+            );
+          reader.onerror = () => resolve(form.photoUrl);
+          reader.readAsDataURL(photoFile);
+        },
+      );
+    }
+    if (selected?.id) {
+      const oldFiles = await bucket.list(folder);
+      const stale =
+        oldFiles.data
+          ?.map((file) => `${folder}/${file.name}`)
+          .filter((file) => file !== path) || [];
+      if (stale.length) await bucket.remove(stale);
+    }
+    return bucket.getPublicUrl(path).data.publicUrl;
+  }
+  async function uploadBuildingPdf(
+    s: ReturnType<typeof createClient>,
+    userId: string,
+  ) {
+    if (!pdfFile) return form.buildingPdfUrl;
+    const path = `${userId}/${selected?.id || crypto.randomUUID()}/${Date.now()}-${pdfFile.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    const upload = await s.storage
+      .from("property-documents")
+      .upload(path, pdfFile, { upsert: true, contentType: "application/pdf" });
+    if (upload.error) {
+      setError(`건축물대장 PDF 업로드 실패: ${upload.error.message}`);
+      return form.buildingPdfUrl;
+    }
+    return s.storage.from("property-documents").getPublicUrl(path).data
+      .publicUrl;
+  }
+  useEffect(() => {
+    if (!selected || !pdfFile) return;
+    let cancelled = false;
+    (async () => {
+      const s = createClient();
+      const { data } = await s.auth.getUser();
+      if (!data.user) return;
+      const url = await uploadBuildingPdf(s, data.user.id);
+      if (cancelled || !url) return;
+      const current = selected.data ?? {};
+      const next = {
+        ...current,
+        buildingPdfUrl: url,
+        buildingPdfName: pdfFile.name,
+      };
+      const result = await s
+        .from("properties")
+        .update({ data: next })
+        .eq("id", selected.id);
+      if (result.error) setError(result.error.message);
+      else
+        setForm((f) => ({
+          ...f,
+          buildingPdfUrl: url,
+          buildingPdfName: pdfFile.name,
+        }));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, pdfFile]);
+  async function persistProperty() {
+    const s = createClient();
+    const { data: a } = await s.auth.getUser();
+    if (!a.user) {
+      setError("로그인 세션이 없습니다.");
+      return;
+    }
+    const photoUrl = await uploadPhoto(s, a.user.id);
+    const buildingPdfUrl = await uploadBuildingPdf(s, a.user.id);
+    const detail = {
+      self: form.self,
+      recommendation: form.recommendation,
+      other: form.other,
+      customer: form.customer,
+      phone: form.phone,
+      salePrice: form.salePrice,
+      floorFrom: form.floorFrom,
+      floorTo: form.floorTo,
+      floor: `${form.floorFrom}층 - ${form.floorTo}층`,
+      floorRows,
+      leaseM2: form.leaseM2,
+      leasePyeong: form.leasePyeong,
+      exclusiveM2: form.exclusiveM2,
+      exclusivePyeong: form.exclusivePyeong,
+      deposit: form.deposit,
+      monthlyRent: form.monthly,
+      unitPrice: form.unit,
+      maintenance: form.maintenance,
+      premium: form.premium,
+      entryPrice: form.entry,
+      maintenanceNote: form.maintenanceNote,
+      heating: form.heating,
+      gas: form.gas,
+      bathroom: form.bathroom,
+      elevator: form.elevator,
+      violation: form.violation,
+      buildingBasement: form.buildingBasement,
+      buildingGround: form.buildingGround,
+      buildingUse: form.buildingUse,
+      buildingStructure: form.buildingStructure,
+      landArea: form.landArea,
+      totalArea: form.totalArea,
+      buildingArea: form.buildingArea,
+      buildingElevator: form.buildingElevator,
+      parking: form.parking,
+      approvalDate: form.approvalDate,
+      note: form.note,
+      photoUrl,
+      buildingPdfUrl,
+      buildingPdfName: pdfName,
+    };
+    const payload = {
+      market_type: marketType,
+      name: form.name,
+      category: form.category,
+      address: form.address,
+      status: form.status,
+      manager: form.manager,
+      data: detail,
+    };
+    const result = selected
+      ? await s.from("properties").update(payload).eq("id", selected.id)
+      : await s.from("properties").insert({ ...payload, user_id: a.user.id });
+    if (result.error) setError(result.error.message);
+    else {
+      setOpen(false);
+      setSelected(null);
+      setPhotoFile(null);
+      setPdfFile(null);
+      setLoading(true);
+      load();
+    }
+  }
+  useEffect(() => {
+    if (!open) return;
+    const submit = (event: SubmitEvent) => {
+      const formEl = event.target;
+      if (!(formEl instanceof HTMLFormElement)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      persistProperty();
+    };
+    document.addEventListener("submit", submit, true);
+    return () => document.removeEventListener("submit", submit, true);
+  }, [open, selected, form, marketType]);
+  useEffect(() => {
+    const button = Array.from(
+      document.querySelectorAll(".detail-card h3 button"),
+    ).find((b) => b.textContent?.trim() === "PDF 업로드");
+    if (button && pdfName) button.textContent = `PDF: ${pdfName}`;
+  }, [pdfName]);
+  function updateArea(
+    key: "leaseM2" | "leasePyeong" | "exclusiveM2" | "exclusivePyeong",
+    value: string,
+  ) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) {
+      set(key, value);
+      return;
+    }
+    if (key.endsWith("M2"))
+      setForm((f) => ({
+        ...f,
+        [key]: value,
+        [key.replace("M2", "Pyeong")]: String(
+          Math.floor((n / SQM_PER_PYEONG) * 10) / 10,
+        ),
+      }));
+    else
+      setForm((f) => ({
+        ...f,
+        [key]: value,
+        [key.replace("Pyeong", "M2")]: String(
+          Math.floor(n * SQM_PER_PYEONG * 10) / 10,
+        ),
+      }));
+  }
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    await persistProperty();
+  }
+  async function bulkDelete() {
+    if (
+      !checked.length ||
+      !confirm(`선택한 항목 ${checked.length}건을 삭제하시겠습니까?`)
+    )
+      return;
+    const s = createClient();
+    const ids = [...checked];
+    await s
+      .from("properties")
+      .update({ deleted_at: new Date().toISOString() })
+      .in("id", ids);
+    setUndo(ids);
+    load();
+  }
+  async function restore(ids: string[]) {
+    const s = createClient();
+    await s.from("properties").update({ deleted_at: null }).in("id", ids);
+    setUndo([]);
+    load();
+  }
+  const table = isRent ? (
+    <div className="rental-table">
+      <div className="rental-head">
+        <span>
+          <input
+            type="checkbox"
+            checked={rows.length > 0 && checked.length === rows.length}
+            onChange={toggleAll}
+          />
+        </span>
+        <span>관심</span>
+        <span>임대매물번호</span>
+        <span>자체관리번호</span>
+        <span>사진</span>
+        <span>분류/매물명</span>
+        <span>주소</span>
+        <span>층</span>
+        <span>면적</span>
+        <span>금액</span>
+        <span>일자</span>
+      </div>
+      {rows.map((r, i) => (
+        <article
+          className="rental-row"
+          key={r.id}
+          onClick={() => setSelected(r)}
+        >
+          <span>
+            <input
+              type="checkbox"
+              checked={checked.includes(r.id)}
+              onClick={(e) => e.stopPropagation()}
+              onChange={() => toggle(r.id)}
+            />
+          </span>
+          <span className={r.favorite ? "favorite active" : "favorite"}>★</span>
+          <span>{d(r).propertyNumber || 1001 + i}</span>
+          <span>{d(r).managementNumber || "—"}</span>
+          <span className="photo-cell">사진</span>
+          <div>
+            <small>{r.category}</small>
+            <strong>{r.name}</strong>
+          </div>
+          <span className="address">{r.address || "주소 미입력"}</span>
+          <span>{d(r).floor || "—"}</span>
+          <span>{d(r).exclusiveM2 || "—"}</span>
+          <span className="amount-cell">
+            보증금 {d(r).deposit || 0}
+            <br />
+            월세 {d(r).monthlyRent || 0}
+          </span>
+          <span>{r.updated_at.slice(0, 10)}</span>
+        </article>
+      ))}
+    </div>
+  ) : (
+    saleTable
+  );
+  const filterPanel = isRent ? (
+    <RentalFilterPanel
+      getRows={() => (baseRowsRef.current.length ? baseRowsRef.current : rows)}
+      onApply={(next) => setRows(next)}
+      onReset={() => {
+        setRows(baseRowsRef.current);
+        setChecked([]);
+      }}
+    />
+  ) : (
+    <SaleFilterPanel
+      getRows={() => (baseRowsRef.current.length ? baseRowsRef.current : rows)}
+      onApply={(next) => setRows(next)}
+      onReset={() => {
+        setRows(baseRowsRef.current);
+        setChecked([]);
+      }}
+    />
+  );
+  const sourceRows = baseRowsRef.current.length ? baseRowsRef.current : rows;
+  return (
+    <div className="shell">
+      <Sidebar />
+      <div className="app">
+        <TopBar marketType={marketType} />
+        <main className="main management-main">
+          <div className="eyebrow">PROPERTY MANAGEMENT</div>
+          <div className="management-heading">
+            <div>
+              <h1 className="title">{title}</h1>
+              <p className="description">{description}</p>
+            </div>
+            <button className="primary-button" onClick={openNew}>
+              + {isRent ? "임대 매물" : "매매 매물"} 등록
+            </button>
+          </div>
+          {filterPanel}
+          <section className="stats-row">
+            <div>
+              <span>{isRent ? "임대매물" : "매매매물"}</span>
+              <strong>{sourceRows.length}</strong>
+            </div>
+            <div>
+              <span>중개중</span>
+              <strong>
+                {sourceRows.filter((r) => r.status === "진행").length}
+              </strong>
+            </div>
+            <div>
+              <span>관심매물</span>
+              <strong>{sourceRows.filter((r) => r.favorite).length}</strong>
+            </div>
+          </section>
+          <section className="data-panel">
+            <div className="panel-heading">
+              <h2>
+                {showTrash ? "휴지통" : `${isRent ? "임대" : "매매"} 매물 목록`}{" "}
+                <b>{showTrash ? trash.length : rows.length}</b>
+              </h2>
+              <div className="panel-actions">
+                {!showTrash && (
+                  <>
+                    <span>{checked.length}건 선택</span>
+                    <button className="text-button" onClick={bulkDelete}>
+                      선택 삭제
+                    </button>
+                  </>
+                )}
+                <button
+                  className="text-button"
+                  onClick={() => setShowTrash(!showTrash)}
+                >
+                  {showTrash ? "목록으로" : "휴지통"}
+                </button>
+              </div>
+            </div>
+            {undo.length > 0 && !showTrash && (
+              <div className="undo-bar">
+                삭제되었습니다.{" "}
+                <button onClick={() => restore(undo)}>되돌리기</button>
+              </div>
+            )}
+            {loading ? (
+              <div className="empty-state">불러오는 중입니다...</div>
+            ) : error ? (
+              <div className="error-state">{error}</div>
+            ) : showTrash ? (
+              <div className="trash-list">
+                {trash.map((r) => (
+                  <article className="trash-row" key={r.id}>
+                    <strong>{r.name}</strong>
+                    <button
+                      className="text-button"
+                      onClick={() => restore([r.id])}
+                    >
+                      복구
+                    </button>
+                  </article>
+                ))}
+              </div>
+            ) : rows.length ? (
+              table
+            ) : (
+              <div className="empty-state">등록된 매물이 없습니다.</div>
+            )}
+          </section>
+          {open && (
+            <div className="modal-backdrop">
+              <form className="property-detail-modal" onSubmit={save}>
+                <header className="detail-modal-head">
+                  <div>
+                    <div className="eyebrow">PROPERTY DETAIL</div>
+                    <h2>
+                      {selected
+                        ? selected.name
+                        : isRent
+                          ? "새 매물 등록"
+                          : "새 매매 매물 등록"}
+                    </h2>
+                    <p>
+                      {selected
+                        ? "저장된 매물 상세"
+                        : "임시 매물번호 · 저장 전 입력"}
+                    </p>
+                  </div>
+                  <div className="detail-head-actions">
+                    <Input
+                      label="담당자"
+                      value={form.manager}
+                      onChange={(v) => set("manager", v)}
+                    />
+                    <button className="primary-button" type="submit">
+                      저장하고 닫기
+                    </button>
+                    <button
+                      className="text-button"
+                      type="button"
+                      onClick={() => setOpen(false)}
+                    >
+                      취소
+                    </button>
+                  </div>
+                </header>
+                <div className="detail-grid">
+                  <Card title="위치정보">
+                    <div className="main-photo-box">
+                      <span>메인 사진</span>
+                    </div>
+                    <input type="file" accept="image/*" />
+                    <Input
+                      label="주소"
+                      value={form.address}
+                      onChange={(v) => set("address", v)}
+                    />
+                  </Card>
+                  <Card title="기본정보">
+                    <div className="two-col">
+                      <Input
+                        label="자체관리"
+                        value={form.self}
+                        onChange={(v) => set("self", v)}
+                      />
+                      <Input
+                        label="추천용도"
+                        value={form.recommendation}
+                        onChange={(v) => set("recommendation", v)}
+                      />
+                      <Input
+                        label="매물명"
+                        value={form.name}
+                        onChange={(v) => set("name", v)}
+                      />
+                      <span className="field-wide">
+                        <Select
+                          label="분류"
+                          value={form.category}
+                          onChange={(v) => set("category", v)}
+                          options={["상가", "사무실", "아파트", "기타"]}
+                        />
+                        <Select
+                          label="진행상태"
+                          value={form.status}
+                          onChange={(v) => set("status", v)}
+                          options={["준비", "진행", "상황", "보류", "거래완료"]}
+                        />
+                      </span>
+                      <Input
+                        label="기타"
+                        value={form.other}
+                        onChange={(v) => set("other", v)}
+                      />
+                      <Input
+                        label="고객명"
+                        value={form.customer}
+                        onChange={(v) => set("customer", v)}
+                      />
+                      <Input
+                        label="전화번호"
+                        value={form.phone}
+                        onChange={(v) => set("phone", v)}
+                      />
+                    </div>
+                  </Card>
+                  <Card title="금액정보(만원)">
+                    <div className="three-col">
+                      {isRent ? <>
+                        <Input label="보증금" value={form.deposit} onChange={(v) => set("deposit", v)} />
+                        <Input label="월세" value={form.monthly} onChange={(v) => set("monthly", v)} />
+                        <Input label="월세평단가" value={form.unit} onChange={(v) => set("unit", v)} />
+                        <Input label="관리비" value={form.maintenance} onChange={(v) => set("maintenance", v)} />
+                        <Input label="권리금" value={form.premium} onChange={(v) => set("premium", v)} />
+                        <Input label="입금가" value={form.entry} onChange={(v) => set("entry", v)} />
+                        <Input label="관리비부연설명" value={form.maintenanceNote} onChange={(v) => set("maintenanceNote", v)} />
+                      </> : <>
+                        <Input label="매매가" value={form.salePrice} onChange={(v) => set("salePrice", v)} />
+                        <Input label="입금가" value={form.entry} onChange={(v) => set("entry", v)} />
+                        <Input label="평단가" value={form.unit} onChange={(v) => set("unit", v)} />
+                        <Input label="보증금" value={form.deposit} onChange={(v) => set("deposit", v)} />
+                        <Input label="월세" value={form.monthly} onChange={(v) => set("monthly", v)} />
+                        <Input label="계약기간" value={form.maintenanceNote} onChange={(v) => set("maintenanceNote", v)} />
+                      </>}
+                    </div>
+                  </Card>
+                  <Card title={isRent ? "임대정보" : "매물정보"}>
+                    <div className="two-col">
+                      <div className="floor-line">
+                        <span>층수</span>
+                        <Input
+                          label=""
+                          value={form.floorFrom}
+                          onChange={(v) => set("floorFrom", v)}
+                        />
+                        <em>층 ~</em>
+                        <Input
+                          label=""
+                          value={form.floorTo}
+                          onChange={(v) => set("floorTo", v)}
+                        />
+                        <em>층</em>
+                      </div>
+                      <div className="area-line">
+                        <Input
+                          label="임대면적 m²"
+                          value={form.leaseM2}
+                          onChange={(v) => updateArea("leaseM2", v)}
+                        />
+                        <Input
+                          label="임대면적 평"
+                          value={form.leasePyeong}
+                          onChange={(v) => updateArea("leasePyeong", v)}
+                        />
+                        <Input
+                          label="전용면적 m²"
+                          value={form.exclusiveM2}
+                          onChange={(v) => updateArea("exclusiveM2", v)}
+                        />
+                        <Input
+                          label="전용면적 평"
+                          value={form.exclusivePyeong}
+                          onChange={(v) => updateArea("exclusivePyeong", v)}
+                        />
+                      </div>
+                      <Select
+                        label={isRent ? "냉난방" : "냉방"}
+                        value={form.heating}
+                        onChange={(v) => set("heating", v)}
+                        options={["", "개별", "중앙"]}
+                      />
+                      <Select
+                        label={isRent ? "가스" : "난방"}
+                        value={form.gas}
+                        onChange={(v) => set("gas", v)}
+                        options={["", "도시가스", "LPG"]}
+                      />
+                      <Input
+                        label={isRent ? "화장실" : "방/화장실"}
+                        value={form.bathroom}
+                        onChange={(v) => set("bathroom", v)}
+                      />
+                      <Select
+                        label="엘리베이터"
+                        value={form.elevator}
+                        onChange={(v) => set("elevator", v)}
+                        options={["", "O", "X"]}
+                      />
+                      <Select
+                        label="위반건축물"
+                        value={form.violation}
+                        onChange={(v) => set("violation", v)}
+                        options={["", "O", "X"]}
+                      />
+                      <Input
+                        label="기타"
+                        value={form.other}
+                        onChange={(v) => set("other", v)}
+                      />
+                    </div>
+                  </Card>
+                  <Card
+                    title="건축물대장"
+                    action={
+                      <>
+                        <input
+                          ref={pdfInputRef}
+                          type="file"
+                          accept="application/pdf"
+                          hidden
+                          onChange={handlePdf}
+                        />
+                        <button
+                          type="button"
+                          className="text-button"
+                          onClick={() => pdfInputRef.current?.click()}
+                        >
+                          {pdfName ? `PDF: ${pdfName}` : "PDF 업로드"}
+                        </button>
+                      </>
+                    }
+                  >
+                    <div className="two-col">
+                      <Input
+                        label="지하총층수"
+                        value={form.buildingBasement}
+                        onChange={(v) => set("buildingBasement", v)}
+                      />
+                      <Input
+                        label="지상총층수"
+                        value={form.buildingGround}
+                        onChange={(v) => set("buildingGround", v)}
+                      />
+                      <Input
+                        label="주용도"
+                        value={form.buildingUse}
+                        onChange={(v) => set("buildingUse", v)}
+                      />
+                      <Input
+                        label="주구조"
+                        value={form.buildingStructure}
+                        onChange={(v) => set("buildingStructure", v)}
+                      />
+                      <Input
+                        label="대지면적"
+                        value={form.landArea}
+                        onChange={(v) => set("landArea", v)}
+                      />
+                      <Input
+                        label="연면적"
+                        value={form.totalArea}
+                        onChange={(v) => set("totalArea", v)}
+                      />
+                      <Input
+                        label="건축면적"
+                        value={form.buildingArea}
+                        onChange={(v) => set("buildingArea", v)}
+                      />
+                      <Input
+                        label="엘리베이터"
+                        value={form.buildingElevator}
+                        onChange={(v) => set("buildingElevator", v)}
+                      />
+                      <Input
+                        label="주차대수"
+                        value={form.parking}
+                        onChange={(v) => set("parking", v)}
+                      />
+                      <Input
+                        label="사용승인일"
+                        value={form.approvalDate}
+                        onChange={(v) => set("approvalDate", v)}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className="collapse-button"
+                      onClick={() => setFloorOpen(!floorOpen)}
+                    >
+                      층별현황 {floorOpen ? "▲" : "▼"}
+                    </button>
+                    {floorOpen && (
+                      <div className="floor-table">
+                        <div>층　 구조　 용도　 면적(㎡)</div>
+                        <div>PDF 업로드 후 층별 정보가 표시됩니다.</div>
+                      </div>
+                    )}
+                  </Card>
+                  <Card title="업무일지">
+                    <div className="worklog-input">
+                      <Select
+                        label="상담관련"
+                        value="기타"
+                        onChange={() => {}}
+                        options={["기타", "상담", "현장방문", "계약"]}
+                      />
+                      <textarea
+                        value={form.note}
+                        onChange={(e) => set("note", e.target.value)}
+                        placeholder="업무 내용을 입력하세요."
+                      />
+                      <button
+                        type="button"
+                        className="primary-button"
+                        onClick={() => {
+                          if (form.note.trim()) setLogs([form.note, ...logs]);
+                          set("note", "");
+                        }}
+                      >
+                        일지 저장
+                      </button>
+                    </div>
+                    <div className="worklog-history">
+                      {logs.length ? (
+                        logs.map((l, i) => (
+                          <article key={`${l}-${i}`}>{l}</article>
+                        ))
+                      ) : (
+                        <div className="empty-state">
+                          업무일지 기록이 없습니다.
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                </div>
+              </form>
+            </div>
+          )}
+        </main>
+      </div>
+    </div>
+  );
 }
