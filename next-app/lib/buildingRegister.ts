@@ -21,7 +21,9 @@ function parseFloorRows(text:string):BuildingFloorRow[] {
   seen.add(key)
   rows.push({floor,structure:match[2].trim(),usage:match[3].trim(),area,areaPyeong:formatPyeong(area),note:''})
  }
- const pattern=/(?:주\d+\s+)?((?:(?:지하|지상)\s*층|(?:지하|지상)?\s*-?\d+\s*층))\s+([^\s]+(?:조|구조))\s+(.+?)\s+([\d,.]+)\s*(?:㎡|m2|m²)?(?=\s|$)/i
+ // PDF.js는 표의 셀 사이 공백을 제거하거나 다음 행의 "주1"을 바로 붙이는
+ // 경우가 있으므로, 다음 층 라벨/이하여백까지를 행의 경계로 사용한다.
+ const pattern=/(?:주\d+\s*)?((?:(?:지하|지상)\s*층|(?:지하|지상)?\s*-?\d+\s*층))\s+([^\s]+(?:조|구조))\s+(.+?)\s+([\d,.]+)\s*(?:㎡|m2|m²)?(?=\s*(?:주\d+\s+)?(?:(?:지하|지상)\s*층|(?:지하|지상)?\s*-?\d+\s*층)|\s*-\s*이하여백|$)/i
  for(const rawLine of text.split(/\r?\n+/)){
   const line=rawLine.replace(/\u00a0/g,' ').replace(/[ \t]+/g,' ').trim()
   if(!line) continue
