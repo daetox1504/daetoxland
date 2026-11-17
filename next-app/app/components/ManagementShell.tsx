@@ -8,7 +8,6 @@ import {
   BuildingFloorRow,
   parseBuildingRegister,
 } from "@/lib/buildingRegister";
-import { extractBuildingPdfWithOcr } from "@/lib/buildingOcrFixed";
 export type MarketType = "rent" | "sale";
 type Row = {
   id: string;
@@ -1219,6 +1218,11 @@ export function PropertyManagement({
     setPdfFile(file);
     try {
       const parsed = await parseBuildingRegister(file);
+      setFloorRows(parsed.floors);
+      const latestViolation = parsed.text.lastIndexOf("위반건축물");
+      const latestRelease = parsed.text.lastIndexOf("위반건축물 해제");
+      if (latestViolation >= 0)
+        set("violation", latestRelease > latestViolation ? "X" : "O");
       setForm((f) => ({
         ...f,
         approvalDate: parsed.fields.approvalDate || f.approvalDate,
@@ -1235,30 +1239,9 @@ export function PropertyManagement({
         buildingPdfName: file.name,
       }));
     } catch (error) {
-      try {
-        const parsed = await extractBuildingPdfWithOcr(file);
-        setForm((f) => ({
-          ...f,
-          approvalDate: parsed.fields.approvalDate || f.approvalDate,
-          buildingBasement:
-            parsed.fields.buildingBasement || f.buildingBasement,
-          buildingGround: parsed.fields.buildingGround || f.buildingGround,
-          buildingUse: parsed.fields.buildingUse || f.buildingUse,
-          buildingStructure:
-            parsed.fields.buildingStructure || f.buildingStructure,
-          landArea: parsed.fields.landArea || f.landArea,
-          totalArea: parsed.fields.totalArea || f.totalArea,
-          buildingArea: parsed.fields.buildingArea || f.buildingArea,
-          buildingElevator:
-            parsed.fields.buildingElevator || f.buildingElevator,
-          parking: parsed.fields.parking || f.parking,
-          buildingPdfName: file.name,
-        }));
-      } catch (ocrError) {
-        setError(
-          `PDF 텍스트/OCR을 읽지 못했습니다. ${ocrError instanceof Error ? ocrError.message : ""}`,
-        );
-      }
+      setError(
+        `PDF 텍스트/OCR을 읽지 못했습니다. ${error instanceof Error ? error.message : ""}`,
+      );
     }
   }
   useEffect(() => {
@@ -1281,26 +1264,6 @@ export function PropertyManagement({
     return () => document.removeEventListener("change", h, true);
   }, [open]);
   useEffect(() => {
-    if (!open || !pdfFile) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const parsed = await parseBuildingRegister(pdfFile);
-        if (cancelled) return;
-        setFloorRows(parsed.floors);
-        const latestViolation = parsed.text.lastIndexOf("위반건축물");
-        const latestRelease = parsed.text.lastIndexOf("위반건축물 해제");
-        if (latestViolation >= 0)
-          set("violation", latestRelease > latestViolation ? "X" : "O");
-      } catch {
-        setFloorRows([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [open, pdfFile]);
-  useEffect(() => {
     if (!open || !floorOpen) return;
     const table = document.querySelector(".floor-table");
     if (!table) return;
@@ -1313,7 +1276,7 @@ export function PropertyManagement({
     }
     const head = document.createElement("div");
     head.className = "floor-table-head";
-    ["층", "구조", "용도", "면적(㎡)"].forEach((label) => {
+    ["층", "구조", "용도", "면적(㎡)", "면적(평)"].forEach((label) => {
       const cell = document.createElement("span");
       cell.textContent = label;
       head.append(cell);
@@ -1322,7 +1285,7 @@ export function PropertyManagement({
     floorRows.forEach((row) => {
       const line = document.createElement("div");
       line.className = "floor-table-row";
-      [row.floor, row.structure, row.usage, row.area].forEach((value) => {
+      [row.floor, row.structure, row.usage, row.area, row.areaPyeong ?? ""].forEach((value) => {
         const cell = document.createElement("span");
         cell.textContent = value;
         line.append(cell);
@@ -2147,7 +2110,7 @@ export function PropertyManagement({
                     </button>
                     {floorOpen && (
                       <div className="floor-table">
-                        <div>층　 구조　 용도　 면적(㎡)</div>
+                        <div>층　 구조　 용도　 면적(㎡)　 면적(평)</div>
                         <div>PDF 업로드 후 층별 정보가 표시됩니다.</div>
                       </div>
                     )}
