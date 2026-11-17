@@ -3,6 +3,12 @@ import { extractBuildingPdfWithOcr } from './buildingOcrFixed'
 
 export type BuildingFloorRow={floor:string;structure:string;usage:string;area:string;areaPyeong?:string;note?:string}
 const SQM_PER_PYEONG = 3.305785
+function formatPyeong(value:string){
+ const number=Number(value)
+ if(!Number.isFinite(number)) return ''
+ const truncated=Math.trunc((number/SQM_PER_PYEONG)*10)/10
+ return Number.isInteger(truncated)?String(truncated):truncated.toFixed(1)
+}
 
 function parseFloorRows(text:string):BuildingFloorRow[] {
  const rows:BuildingFloorRow[]=[]
@@ -13,7 +19,7 @@ function parseFloorRows(text:string):BuildingFloorRow[] {
   const key=`${floor}|${match[2]}|${match[3]}|${area}`
   if(seen.has(key)) return
   seen.add(key)
-  rows.push({floor,structure:match[2].trim(),usage:match[3].trim(),area,areaPyeong:(Number(area)/SQM_PER_PYEONG).toFixed(2),note:''})
+  rows.push({floor,structure:match[2].trim(),usage:match[3].trim(),area,areaPyeong:formatPyeong(area),note:''})
  }
  const pattern=/(?:주\d+\s+)?((?:(?:지하|지상)\s*층|(?:지하|지상)?\s*-?\d+\s*층))\s+([^\s]+(?:조|구조))\s+(.+?)\s+([\d,.]+)\s*(?:㎡|m2|m²)?(?=\s|$)/i
  for(const rawLine of text.split(/\r?\n+/)){
