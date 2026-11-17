@@ -8,7 +8,7 @@ function parseFields(text:string):BuildingPdfFields {
 export async function extractBuildingPdfWithOcr(file:File,onProgress?:(value:number)=>void){
   const base=await extractBuildingPdf(file); if(base.text.replace(/\s/g,'').length>=40)return base
   const pdfjs=await import('pdfjs-dist/legacy/build/pdf.mjs'); const {createWorker}=await import('tesseract.js')
-  const pdfDocument=await pdfjs.getDocument({data:await file.arrayBuffer()}).promise; const worker=await createWorker('kor+eng',1,{logger:(message)=>{if(message.status==='recognizing text')onProgress?.(message.progress)}}); const pages:string[]=[]
+  const pdfDocument=await pdfjs.getDocument({data:await file.arrayBuffer(),disableWorker:true} as any).promise; const worker=await createWorker('kor+eng',1,{logger:(message)=>{if(message.status==='recognizing text')onProgress?.(message.progress)}}); const pages:string[]=[]
   for(let pageNumber=1;pageNumber<=pdfDocument.numPages;pageNumber++){const page=await pdfDocument.getPage(pageNumber);const viewport=page.getViewport({scale:2});const canvas=globalThis.document.createElement('canvas');canvas.width=viewport.width;canvas.height=viewport.height;const context=canvas.getContext('2d');if(!context)continue;await page.render({canvas,canvasContext:context,viewport}).promise;const result=await worker.recognize(canvas);pages.push(result.data.text)}
   await worker.terminate(); const text=pages.join('\n'); return {text,fields:parseFields(text)}
 }
