@@ -1239,7 +1239,16 @@ export function PropertyManagement({
       buildingPdfName: file.name,
     }));
     try {
-      const parsed = await parseBuildingRegister(file);
+      const payload = new FormData();
+      payload.append("file", file);
+      const response = await fetch("/api/building-register", {
+        method: "POST",
+        body: payload,
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const parsed = (await response.json()) as Awaited<
+        ReturnType<typeof parseBuildingRegister>
+      >;
       if (token !== pdfParseTokenRef.current) return;
       setFloorRows(parsed.floors);
       const latestViolation = parsed.text.lastIndexOf("위반건축물");
