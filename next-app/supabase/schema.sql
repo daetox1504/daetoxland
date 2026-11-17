@@ -4,6 +4,7 @@ create table if not exists public.properties (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   market_type text not null check (market_type in ('rent','sale')),
+  public_number text,
   name text not null,
   category text not null default '기타',
   address text not null default '',
@@ -19,6 +20,7 @@ create table if not exists public.properties (
 create table if not exists public.customers (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
+  public_number text,
   name text not null,
   market_type text not null check (market_type in ('rent','sale')),
   category text not null default '기타',

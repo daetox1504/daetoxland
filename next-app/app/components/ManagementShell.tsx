@@ -12,6 +12,7 @@ import { extractBuildingPdfWithOcr } from "@/lib/buildingOcrFixed";
 export type MarketType = "rent" | "sale";
 type Row = {
   id: string;
+  public_number?: string | null;
   name: string;
   category: string;
   address: string;
@@ -113,6 +114,18 @@ const initial: F = {
   buildingPdfName: "",
 };
 const SQM_PER_PYEONG = 3.305785;
+function publicNumberPrefix(marketType: MarketType) {
+  return marketType === "rent" ? "R" : "S";
+}
+function nextPublicNumber(values: Array<string | null | undefined>, prefix: string) {
+  const year = new Date().getFullYear();
+  const pattern = new RegExp(`^${prefix}-${year}-(\\d{5})$`);
+  const max = values.reduce((highest, value) => {
+    const match = String(value ?? "").match(pattern);
+    return Math.max(highest, match ? Number(match[1]) : 0);
+  }, 0);
+  return `${prefix}-${year}-${String(max + 1).padStart(5, "0")}`;
+}
 function formatFloorRange(from?: string, to?: string, fallback?: string) {
   const a = String(from ?? "").trim();
   const b = String(to ?? "").trim() || a;
@@ -908,7 +921,7 @@ export function PropertyManagement({
     const a = await s
       .from("properties")
       .select(
-        "id,name,category,address,status,favorite,manager,data,updated_at,deleted_at",
+        "id,public_number,name,category,address,status,favorite,manager,data,updated_at,deleted_at",
       )
       .eq("market_type", marketType)
       .is("deleted_at", null)
@@ -916,7 +929,7 @@ export function PropertyManagement({
     const t = await s
       .from("properties")
       .select(
-        "id,name,category,address,status,favorite,manager,data,updated_at,deleted_at",
+        "id,public_number,name,category,address,status,favorite,manager,data,updated_at,deleted_at",
       )
       .eq("market_type", marketType)
       .not("deleted_at", "is", null)
@@ -1431,7 +1444,7 @@ export function PropertyManagement({
             <span className={r.favorite ? "favorite active" : "favorite"}>
               ★
             </span>
-            <span>{x.propertyNumber || 2001 + i}</span>
+            <span>{r.public_number || x.propertyNumber || `S-${r.updated_at.slice(0, 4)}-${String(2001 + i).padStart(5, "0")}`}</span>
             <span>{x.managementNumber || "—"}</span>
             <span className="photo-cell">사진</span>
             <div>
@@ -1552,6 +1565,18 @@ export function PropertyManagement({
     }
     const photoUrl = await uploadPhoto(s, a.user.id);
     const buildingPdfUrl = await uploadBuildingPdf(s, a.user.id);
+    let publicNumber = selected?.public_number || null;
+    if (!publicNumber) {
+      const existing = await s
+        .from("properties")
+        .select("public_number")
+        .eq("user_id", a.user.id)
+        .eq("market_type", marketType);
+      publicNumber = nextPublicNumber(
+        (existing.data ?? []).map((row) => row.public_number),
+        publicNumberPrefix(marketType),
+      );
+    }
     const detail = {
       self: form.self,
       recommendation: form.recommendation,
@@ -1596,6 +1621,7 @@ export function PropertyManagement({
     };
     const payload = {
       market_type: marketType,
+      public_number: publicNumber,
       name: form.name,
       category: form.category,
       address: form.address,
@@ -1721,7 +1747,7 @@ export function PropertyManagement({
             />
           </span>
           <span className={r.favorite ? "favorite active" : "favorite"}>★</span>
-          <span>{d(r).propertyNumber || 1001 + i}</span>
+          <span>{r.public_number || d(r).propertyNumber || `R-${r.updated_at.slice(0, 4)}-${String(1001 + i).padStart(5, "0")}`}</span>
           <span>{d(r).managementNumber || "—"}</span>
           <span className="photo-cell">사진</span>
           <div>
