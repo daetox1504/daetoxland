@@ -29,10 +29,10 @@ function parseFloorRows(text:string):BuildingFloorRow[] {
   if(!match) continue
   add(match)
  }
- if(!rows.length){
-  const compact=text.replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim()
-  for(const match of compact.matchAll(new RegExp(pattern.source,'gi'))) add(match)
- }
+ // PDF.js가 같은 표를 한 줄로 합쳐 반환하는 경우가 있어
+ // 줄 단위 추출 결과가 있더라도 압축 텍스트를 한 번 더 훑어 누락된 층을 보완한다.
+ const compact=text.replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim()
+ for(const match of compact.matchAll(new RegExp(pattern.source,'gi'))) add(match)
  return rows
 }
 
