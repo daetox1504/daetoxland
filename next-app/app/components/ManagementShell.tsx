@@ -1494,8 +1494,20 @@ export function PropertyManagement({
       .from("property-documents")
       .upload(path, pdfFile, { upsert: true, contentType: "application/pdf" });
     if (upload.error) {
-      setError(`건축물대장 PDF 업로드 실패: ${upload.error.message}`);
-      return form.buildingPdfUrl;
+      // Keep PDF data usable even when the optional Storage bucket has not
+      // been created yet. The data URL is persisted with the property and
+      // remains available for download/preview after a refresh.
+      return await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () =>
+          resolve(
+            typeof reader.result === "string"
+              ? reader.result
+              : form.buildingPdfUrl,
+          );
+        reader.onerror = () => resolve(form.buildingPdfUrl);
+        reader.readAsDataURL(pdfFile);
+      });
     }
     return s.storage.from("property-documents").getPublicUrl(path).data
       .publicUrl;
