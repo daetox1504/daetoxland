@@ -893,6 +893,7 @@ export function PropertyManagement({
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const pdfInputRef = useRef<HTMLInputElement | null>(null);
+  const pdfParseTokenRef = useRef(0);
   const set = (key: keyof F, v: string) => setForm((f) => ({ ...f, [key]: v }));
   const d = (r: Row | null) => r?.data ?? {};
   const toggle = (id: string) =>
@@ -1214,10 +1215,32 @@ export function PropertyManagement({
   async function handlePdf(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    const token = ++pdfParseTokenRef.current;
     setPdfName(file.name);
     setPdfFile(file);
+    setFloorRows([]);
+    setError("");
+    // 새 PDF를 선택하면 이전 PDF의 값과 URL을 먼저 제거한다.
+    // 새 파일에 없는 항목을 이전 파일 값으로 남기지 않는다.
+    setForm((f) => ({
+      ...f,
+      buildingBasement: "0",
+      buildingGround: "1",
+      buildingUse: "",
+      buildingStructure: "",
+      landArea: "0",
+      totalArea: "0",
+      buildingArea: "0",
+      buildingElevator: "0",
+      parking: "0",
+      approvalDate: "",
+      violation: "",
+      buildingPdfUrl: "",
+      buildingPdfName: file.name,
+    }));
     try {
       const parsed = await parseBuildingRegister(file);
+      if (token !== pdfParseTokenRef.current) return;
       setFloorRows(parsed.floors);
       const latestViolation = parsed.text.lastIndexOf("위반건축물");
       const latestRelease = parsed.text.lastIndexOf("위반건축물 해제");
@@ -1225,17 +1248,16 @@ export function PropertyManagement({
         set("violation", latestRelease > latestViolation ? "X" : "O");
       setForm((f) => ({
         ...f,
-        approvalDate: parsed.fields.approvalDate || f.approvalDate,
-        buildingBasement: parsed.fields.buildingBasement || f.buildingBasement,
-        buildingGround: parsed.fields.buildingGround || f.buildingGround,
-        buildingUse: parsed.fields.buildingUse || f.buildingUse,
-        buildingStructure:
-          parsed.fields.buildingStructure || f.buildingStructure,
-        landArea: parsed.fields.landArea || f.landArea,
-        totalArea: parsed.fields.totalArea || f.totalArea,
-        buildingArea: parsed.fields.buildingArea || f.buildingArea,
-        buildingElevator: parsed.fields.buildingElevator || f.buildingElevator,
-        parking: parsed.fields.parking || f.parking,
+        approvalDate: parsed.fields.approvalDate || "",
+        buildingBasement: parsed.fields.buildingBasement || "0",
+        buildingGround: parsed.fields.buildingGround || "1",
+        buildingUse: parsed.fields.buildingUse || "",
+        buildingStructure: parsed.fields.buildingStructure || "",
+        landArea: parsed.fields.landArea || "0",
+        totalArea: parsed.fields.totalArea || "0",
+        buildingArea: parsed.fields.buildingArea || "0",
+        buildingElevator: parsed.fields.buildingElevator || "0",
+        parking: parsed.fields.parking || "0",
         buildingPdfName: file.name,
       }));
     } catch (error) {
