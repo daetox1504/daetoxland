@@ -890,6 +890,7 @@ export function PropertyManagement({
   const [floorRows, setFloorRows] = useState<BuildingFloorRow[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
   const [pdfName, setPdfName] = useState("");
+  const [pdfParsing, setPdfParsing] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const pdfInputRef = useRef<HTMLInputElement | null>(null);
@@ -1218,6 +1219,7 @@ export function PropertyManagement({
     const token = ++pdfParseTokenRef.current;
     setPdfName(file.name);
     setPdfFile(file);
+    setPdfParsing(true);
     setFloorRows([]);
     setError("");
     // 새 PDF를 선택하면 이전 PDF의 값과 URL을 먼저 제거한다.
@@ -1239,16 +1241,31 @@ export function PropertyManagement({
       buildingPdfName: file.name,
     }));
     try {
-      const payload = new FormData();
-      payload.append("file", file);
-      const response = await fetch("/api/building-register", {
-        method: "POST",
-        body: payload,
-      });
-      if (!response.ok) throw new Error(await response.text());
-      const parsed = (await response.json()) as Awaited<
-        ReturnType<typeof parseBuildingRegister>
-      >;
+      let parsed: Awaited<ReturnType<typeof parseBuildingRegister>> | null = null;
+      try {
+        const local = await parseBuildingRegister(file);
+        const hasData = Boolean(
+          local.floors.length ||
+            local.fields.buildingUse ||
+            local.fields.buildingStructure ||
+            local.fields.totalArea,
+        );
+        if (hasData) parsed = local;
+      } catch {
+        // 브라우저 PDF 엔진이 실패하면 아래 서버 파싱으로 전환한다.
+      }
+      if (!parsed) {
+        const payload = new FormData();
+        payload.append("file", file);
+        const response = await fetch("/api/building-register", {
+          method: "POST",
+          body: payload,
+        });
+        if (!response.ok) throw new Error(await response.text());
+        parsed = (await response.json()) as Awaited<
+          ReturnType<typeof parseBuildingRegister>
+        >;
+      }
       if (token !== pdfParseTokenRef.current) return;
       setFloorRows(parsed.floors);
       const latestViolation = parsed.text.lastIndexOf("위반건축물");
@@ -1273,6 +1290,8 @@ export function PropertyManagement({
       setError(
         `PDF 텍스트/OCR을 읽지 못했습니다. ${error instanceof Error ? error.message : ""}`,
       );
+    } finally {
+      if (token === pdfParseTokenRef.current) setPdfParsing(false);
     }
   }
   useEffect(() => {
@@ -2075,7 +2094,11 @@ export function PropertyManagement({
                           className="text-button"
                           onClick={() => pdfInputRef.current?.click()}
                         >
-                          {pdfName ? `PDF: ${pdfName}` : "PDF 업로드"}
+                          {pdfParsing
+                            ? "PDF 분석 중..."
+                            : pdfName
+                              ? `PDF: ${pdfName}`
+                              : "PDF 업로드"}
                         </button>
                       </>
                     }
