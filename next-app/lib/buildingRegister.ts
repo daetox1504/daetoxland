@@ -24,6 +24,7 @@ function parseFloorRows(text:string):BuildingFloorRow[] {
  // PDF.js는 표의 셀 사이 공백을 제거하거나 다음 행의 "주1"을 바로 붙이는
  // 경우가 있으므로, 행 번호(주1) 또는 이하여백을 행의 경계로 사용한다.
  const pattern=/(?:주\d+\s*)?((?:(?:지하|지상)\s*층|(?:지하|지상)?\s*-?\d+\s*층))\s+([^\s]+(?:조|구조))\s+(.+?)\s+([\d,.]+)\s*(?:㎡|m2|m²)?(?=\s*(?:주\d+\s+|\-\s*이하여백|$))/i
+ const loosePattern=/(?:주\d+\s*)?((?:(?:지하|지상)\s*층|(?:지하|지상)?\s*-?\d+\s*층))\s*([^\s]+(?:조|구조))\s*(.+?)\s*([\d,.]+)\s*(?:㎡|m2|m²)?(?=\s*(?:주\d+\s*)?(?:(?:지하|지상)\s*층|(?:지상|지하)?\s*-?\d+\s*층)|\s*-\s*이하여백|$)/i
  for(const rawLine of text.split(/\r?\n+/)){
   const line=rawLine.replace(/\u00a0/g,' ').replace(/[ \t]+/g,' ').trim()
   if(!line) continue
@@ -35,6 +36,7 @@ function parseFloorRows(text:string):BuildingFloorRow[] {
  // 줄 단위 추출 결과가 있더라도 압축 텍스트를 한 번 더 훑어 누락된 층을 보완한다.
  const compact=text.replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim()
  for(const match of compact.matchAll(new RegExp(pattern.source,'gi'))) add(match)
+ for(const match of compact.matchAll(new RegExp(loosePattern.source,'gi'))) add(match)
  return rows
 }
 
