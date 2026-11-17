@@ -936,11 +936,9 @@ export function PropertyManagement({
       .order("deleted_at", { ascending: false });
     if (a.error || t.error) setError("매물 데이터를 불러오지 못했습니다.");
     else {
-      const nextRows = ((a.data ?? []) as Row[]).map((r) =>
-        marketType === "sale" && !r.data?.salePrice
-          ? { ...r, data: { ...(r.data ?? {}), salePrice: r.data?.entryPrice || "" } }
-          : r,
-      );
+      // 매매가는 매매가 필드만 사용한다. 과거 임대/입금가 필드를
+      // 매매가로 대체하면 목록과 상세 카드의 금액이 달라질 수 있다.
+      const nextRows = (a.data ?? []) as Row[];
       baseRowsRef.current = nextRows;
       setRows(nextRows);
       setTrash((t.data ?? []) as Row[]);
@@ -1109,7 +1107,7 @@ export function PropertyManagement({
       other: x.other || "",
       customer: x.customer || "",
       phone: x.phone || "",
-      salePrice: x.salePrice || x.entryPrice || "",
+      salePrice: x.salePrice || "",
       deposit: x.deposit || "0",
       monthly: x.monthlyRent || "0",
       unit: x.unitPrice || "0",
