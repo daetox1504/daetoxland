@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Sidebar, TopBar } from '../components/ManagementShell'
-import CustomerManagement from '../components/CustomerManagement2'
+import CustomerManagement from '../components/CustomerManagementLogs'
 
 type Customer = { id: string; name: string; market_type: string; category: string; phone: string; budget: string; status: string; memo: string; updated_at: string }
 const empty = { name: '', marketType: 'rent', category: '상가', phone: '', budget: '', status: '상담중', memo: '' }
