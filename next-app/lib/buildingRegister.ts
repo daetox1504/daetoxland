@@ -15,7 +15,7 @@ function parseFloorRows(text:string):BuildingFloorRow[] {
   seen.add(key)
   rows.push({floor,structure:match[2].trim(),usage:match[3].trim(),area,areaPyeong:(Number(area)/SQM_PER_PYEONG).toFixed(2),note:''})
  }
- const pattern=/(?:주\d+\s+)?((?:지하|지상)?\s*-?\d+\s*층)\s+([^\s]+조)\s+(.+?)\s+([\d,.]+)\s*(?:㎡|m2|m²)/i
+ const pattern=/(?:주\d+\s+)?((?:지하|지상)?\s*-?\d+\s*층)\s+([^\s]+(?:조|구조))\s+(.+?)\s+([\d,.]+)\s*(?:㎡|m2|m²)/i
  for(const rawLine of text.split(/\r?\n+/)){
   const line=rawLine.replace(/\u00a0/g,' ').replace(/[ \t]+/g,' ').trim()
   if(!line) continue
@@ -33,23 +33,42 @@ function parseFloorRows(text:string):BuildingFloorRow[] {
 function mergeFields(base:BuildingPdfFields,text:string):BuildingPdfFields {
  const compact=text.replace(/\s+/g,' ')
  const pick=(patterns:RegExp[])=>{for(const pattern of patterns){const match=compact.match(pattern);if(match?.[1])return match[1].trim()}return ''}
+ const use=pick([/주\s*용도\s*[:：]?\s*(.+?)(?=주\s*구조|구조|대지\s*면적|연\s*면적|건축\s*면적|$)/])
+ const structure=pick([/주\s*구조\s*[:：]?\s*(.+?)(?=주\s*용도|대지\s*면적|연\s*면적|건축\s*면적|$)/])
+ const basement=pick([/지하\s*(?:총\s*)?층\s*수?[^0-9-]*(-?\d+)\s*층?/])
+ const ground=pick([/지상\s*(?:총\s*)?층\s*수?[^0-9]*([0-9]+)\s*층?/])
+ const land=pick([/대지\s*면적\s*[:：]?\s*([\d,.]+)/])
+ const total=pick([/연\s*면적\s*[:：]?\s*([\d,.]+)/])
+ const building=pick([/건축\s*면적\s*[:：]?\s*([\d,.]+)/])
+ const elevator=pick([/(?:승강기|엘리베이터)\s*[:：]?\s*([^\s]+)/])
+ const parking=pick([/주차\s*(?:대수|장)?\s*[:：]?\s*([^\s]+)/])
  return {
   ...base,
-  approvalDate:base.approvalDate||pick([/(?:사용승인일|사용승인|준공일)[^0-9]*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})/]),
-  buildingBasement:base.buildingBasement||pick([/(?:지하총층수|지하층수|지하층|지하)[^0-9-]*(-?\d+)\s*층?/]),
-  buildingGround:base.buildingGround||pick([/(?:지상총층수|지상층수|지상층|지상)[^0-9]*(\d+)\s*층?/]),
-  buildingUse:base.buildingUse||pick([/주용도\s*[:：]?\s*(.+?)(?=주구조|구조|대지면적|연면적|건축면적|$)/]),
-  buildingStructure:base.buildingStructure||pick([/주구조\s*[:：]?\s*(.+?)(?=주용도|대지면적|연면적|건축면적|$)/]),
-  landArea:base.landArea||pick([/대지면적\s*[:：]?\s*([\d,.]+)/]),
-  totalArea:base.totalArea||pick([/연면적\s*[:：]?\s*([\d,.]+)/]),
-  buildingArea:base.buildingArea||pick([/건축면적\s*[:：]?\s*([\d,.]+)/]),
-  buildingElevator:base.buildingElevator||pick([/(?:승강기|엘리베이터)\s*[:：]?\s*([^\s]+)/]),
-  parking:base.parking||pick([/(?:주차대수|주차장|주차)\s*[:：]?\s*([^\s]+)/]),
+  approvalDate:pick([/(?:사용\s*승인\s*일|사용\s*승인|준공\s*일)\s*[:：]?\s*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})/])||base.approvalDate,
+  buildingBasement:basement||base.buildingBasement,
+  buildingGround:ground||base.buildingGround,
+  buildingUse:use||base.buildingUse,
+  buildingStructure:structure||base.buildingStructure,
+  landArea:land||base.landArea,
+  totalArea:total||base.totalArea,
+  buildingArea:building||base.buildingArea,
+  buildingElevator:elevator||base.buildingElevator,
+  parking:parking||base.parking,
  }
 }
 
 export async function parseBuildingRegister(file:File):Promise<{fields:BuildingPdfFields;floors:BuildingFloorRow[];text:string}>{
  let base=await extractBuildingPdf(file)
- if(base.text.replace(/\s/g,'').length<40) base=await extractBuildingPdfWithOcr(file)
- return {fields:mergeFields(base.fields,base.text),floors:parseFloorRows(base.text),text:base.text}
+ let fields=mergeFields(base.fields,base.text)
+ let floors=parseFloorRows(base.text)
+ const hasUsefulData=Boolean(fields.buildingUse||fields.buildingStructure||fields.landArea||fields.totalArea||fields.buildingArea||floors.length)
+ // 이미지형 PDF는 텍스트 길이가 길어도 실제 항목이 하나도 추출되지 않을 수 있다.
+ // 이 경우에도 OCR을 재시도한다.
+ if(base.text.replace(/\s/g,'').length<40||!hasUsefulData){
+  const ocr=await extractBuildingPdfWithOcr(file)
+  const ocrFields=mergeFields(ocr.fields,ocr.text)
+  const ocrFloors=parseFloorRows(ocr.text)
+  if(ocrFields.buildingUse||ocrFields.buildingStructure||ocrFields.landArea||ocrFields.totalArea||ocrFields.buildingArea||ocrFloors.length){fields=ocrFields;floors=ocrFloors;base={...base,text:ocr.text}}
+ }
+ return {fields,floors,text:base.text}
 }
