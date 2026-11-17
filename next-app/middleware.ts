@@ -2,7 +2,11 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
-  if (request.nextUrl.pathname === '/' || request.nextUrl.pathname.startsWith('/legacy')) {
+  if (
+    request.nextUrl.pathname === '/' ||
+    request.nextUrl.pathname.startsWith('/legacy') ||
+    request.nextUrl.pathname === '/api/building-register'
+  ) {
     return NextResponse.next()
   }
   let response = NextResponse.next({ request })
