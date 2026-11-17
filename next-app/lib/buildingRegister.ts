@@ -15,7 +15,7 @@ function parseFloorRows(text:string):BuildingFloorRow[] {
   seen.add(key)
   rows.push({floor,structure:match[2].trim(),usage:match[3].trim(),area,areaPyeong:(Number(area)/SQM_PER_PYEONG).toFixed(2),note:''})
  }
- const pattern=/(?:주\d+\s+)?((?:지하|지상)?\s*-?\d+\s*층)\s+([^\s]+(?:조|구조))\s+(.+?)\s+([\d,.]+)\s*(?:㎡|m2|m²)/i
+ const pattern=/(?:주\d+\s+)?((?:(?:지하|지상)\s*층|(?:지하|지상)?\s*-?\d+\s*층))\s+([^\s]+(?:조|구조))\s+(.+?)\s+([\d,.]+)\s*(?:㎡|m2|m²)?(?=\s|$)/i
  for(const rawLine of text.split(/\r?\n+/)){
   const line=rawLine.replace(/\u00a0/g,' ').replace(/[ \t]+/g,' ').trim()
   if(!line) continue
@@ -33,10 +33,10 @@ function parseFloorRows(text:string):BuildingFloorRow[] {
 function mergeFields(base:BuildingPdfFields,text:string):BuildingPdfFields {
  const compact=text.replace(/\s+/g,' ')
  const pick=(patterns:RegExp[])=>{for(const pattern of patterns){const match=compact.match(pattern);if(match?.[1])return match[1].trim()}return ''}
- const use=pick([/주\s*용도\s*[:：]?\s*(.+?)(?=주\s*구조|구조|대지\s*면적|연\s*면적|건축\s*면적|$)/])
- const structure=pick([/주\s*구조\s*[:：]?\s*(.+?)(?=주\s*용도|대지\s*면적|연\s*면적|건축\s*면적|$)/])
- const basement=pick([/지하\s*(?:총\s*)?층\s*수?[^0-9-]*(-?\d+)\s*층?/])
- const ground=pick([/지상\s*(?:총\s*)?층\s*수?[^0-9]*([0-9]+)\s*층?/])
+ const use=pick([/주\s*구조\s+주\s*용도\s+층수\s+[^\s]+(?:조|구조)\s+(.+?)\s+지하\s*[:：]/,/주\s*용도\s*[:：]?\s*(.+?)(?=주\s*구조|구조|대지\s*면적|연\s*면적|건축\s*면적|$)/])
+ const structure=pick([/주\s*구조\s+주\s*용도\s+층수\s+([^\s]+(?:조|구조))\s+/,/주\s*구조\s*[:：]?\s*(.+?)(?=주\s*용도|대지\s*면적|연\s*면적|건축\s*면적|$)/])
+ const basement=pick([/지하\s*(?:총\s*)?층\s*수?\s*[:：]?\s*(-?\d+)\s*층?/,/지하\s*[:：]\s*(-?\d+)\s*층?/])
+ const ground=pick([/지상\s*(?:총\s*)?층\s*수?\s*[:：]?\s*([0-9]+)\s*층?/,/지상\s*[:：]\s*([0-9]+)\s*층?/])
  const land=pick([/대지\s*면적\s*[:：]?\s*([\d,.]+)/])
  const total=pick([/연\s*면적\s*[:：]?\s*([\d,.]+)/])
  const building=pick([/건축\s*면적\s*[:：]?\s*([\d,.]+)/])
