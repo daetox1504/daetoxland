@@ -1027,18 +1027,6 @@ export function PropertyManagement({
       const button = t.closest("button");
       if (!button) return;
       const label = button.textContent?.trim();
-      if (label === "PDF 업로드") {
-        event.preventDefault();
-        event.stopPropagation();
-        const input = document.createElement("input");
-        input.type = "file";
-        input.accept = "application/pdf";
-        input.onchange = () => {
-          const file = input.files?.[0];
-          if (file) setPdfName(file.name);
-        };
-        input.click();
-      }
       if (label === "일지 저장") {
         event.preventDefault();
         event.stopPropagation();
