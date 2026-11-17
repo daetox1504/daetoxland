@@ -1181,6 +1181,14 @@ export function PropertyManagement({
   }, [rows, isRent]);
   useEffect(() => {
     if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
     const host = document.querySelector(".main-photo-box");
     if (!host) return;
     host.replaceChildren();
