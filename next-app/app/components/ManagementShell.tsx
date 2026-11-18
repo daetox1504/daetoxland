@@ -1340,49 +1340,6 @@ export function PropertyManagement({
     });
   }, [open, floorOpen, floorRows]);
   useEffect(() => {
-    if (!selected || !floorRows.length) return;
-    const s = createClient();
-    const next = {
-      ...(selected.data ?? {}),
-      floorRows,
-      buildingPdfName: form.buildingPdfName,
-      buildingPdfUrl: form.buildingPdfUrl,
-      buildingBasement: form.buildingBasement,
-      buildingGround: form.buildingGround,
-      buildingUse: form.buildingUse,
-      buildingStructure: form.buildingStructure,
-      landArea: form.landArea,
-      totalArea: form.totalArea,
-      buildingArea: form.buildingArea,
-      buildingElevator: form.buildingElevator,
-      parking: form.parking,
-      approvalDate: form.approvalDate,
-      violation: form.violation,
-    };
-    s.from("properties")
-      .update({ data: next })
-      .eq("id", selected.id)
-      .then((result) => {
-        if (result.error) setError(result.error.message);
-      });
-  }, [
-    selected,
-    floorRows,
-    form.buildingPdfName,
-    form.buildingPdfUrl,
-    form.buildingBasement,
-    form.buildingGround,
-    form.buildingUse,
-    form.buildingStructure,
-    form.landArea,
-    form.totalArea,
-    form.buildingArea,
-    form.buildingElevator,
-    form.parking,
-    form.approvalDate,
-    form.violation,
-  ]);
-  useEffect(() => {
     if (selected) {
       setForm(formFromRow(selected));
       const saved = (selected.data?.floorRows ?? []) as BuildingFloorRow[];
@@ -1538,37 +1495,6 @@ export function PropertyManagement({
     return s.storage.from("property-documents").getPublicUrl(path).data
       .publicUrl;
   }
-  useEffect(() => {
-    if (!selected || !pdfFile) return;
-    let cancelled = false;
-    (async () => {
-      const s = createClient();
-      const { data } = await s.auth.getUser();
-      if (!data.user) return;
-      const url = await uploadBuildingPdf(s, data.user.id);
-      if (cancelled || !url) return;
-      const current = selected.data ?? {};
-      const next = {
-        ...current,
-        buildingPdfUrl: url,
-        buildingPdfName: pdfFile.name,
-      };
-      const result = await s
-        .from("properties")
-        .update({ data: next })
-        .eq("id", selected.id);
-      if (result.error) setError(result.error.message);
-      else
-        setForm((f) => ({
-          ...f,
-          buildingPdfUrl: url,
-          buildingPdfName: pdfFile.name,
-        }));
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [selected, pdfFile]);
   async function persistProperty() {
     const s = createClient();
     const { data: a } = await s.auth.getUser();
