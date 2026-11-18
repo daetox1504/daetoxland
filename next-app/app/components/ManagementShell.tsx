@@ -1393,8 +1393,8 @@ export function PropertyManagement({
           />
         </span>
         <span>관심</span>
-        <span>매매매물번호</span>
-        <span>자체관리번호</span>
+        <span>자체관리번호<br />매매매물번호</span>
+        <span>진행상태</span>
         <span>사진</span>
         <span>분류/매물명</span>
         <span>주소</span>
@@ -1439,8 +1439,11 @@ export function PropertyManagement({
             <span className={r.favorite ? "favorite active" : "favorite"}>
               ★
             </span>
-            <span>{r.public_number || x.propertyNumber || `S-${r.updated_at.slice(0, 4)}-${String(2001 + i).padStart(5, "0")}`}</span>
-            <span>{x.managementNumber || "—"}</span>
+            <div className="property-number-cell">
+              <small>{x.managementNumber || "자체관리번호 없음"}</small>
+              <strong>{r.public_number || x.propertyNumber || `S-${r.updated_at.slice(0, 4)}-${String(2001 + i).padStart(5, "0")}`}</strong>
+            </div>
+            <span className="status-pill">{r.status || "—"}</span>
             <span className="photo-cell">사진</span>
             <div>
               <small>{r.category}</small>
@@ -1704,8 +1707,8 @@ export function PropertyManagement({
           />
         </span>
         <span>관심</span>
-        <span>임대매물번호</span>
-        <span>자체관리번호</span>
+        <span>자체관리번호<br />임대매물번호</span>
+        <span>진행상태</span>
         <span>사진</span>
         <span>분류/매물명</span>
         <span>주소</span>
@@ -1729,8 +1732,11 @@ export function PropertyManagement({
             />
           </span>
           <span className={r.favorite ? "favorite active" : "favorite"}>★</span>
-          <span>{r.public_number || d(r).propertyNumber || `R-${r.updated_at.slice(0, 4)}-${String(1001 + i).padStart(5, "0")}`}</span>
-          <span>{d(r).managementNumber || "—"}</span>
+          <div className="property-number-cell">
+            <small>{d(r).managementNumber || "자체관리번호 없음"}</small>
+            <strong>{r.public_number || d(r).propertyNumber || `R-${r.updated_at.slice(0, 4)}-${String(1001 + i).padStart(5, "0")}`}</strong>
+          </div>
+          <span className="status-pill">{r.status || "—"}</span>
           <span className="photo-cell">사진</span>
           <div>
             <small>{r.category}</small>
