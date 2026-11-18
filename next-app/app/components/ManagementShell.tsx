@@ -1682,6 +1682,17 @@ export function PropertyManagement({
     setUndo([]);
     load();
   }
+  async function purge(ids: string[]) {
+    if (!ids.length || !confirm(`선택한 휴지통 항목 ${ids.length}건을 영구 삭제하시겠습니까?`)) return;
+    const s = createClient();
+    const result = await s.from("properties").delete().in("id", ids);
+    if (result.error) {
+      setError(result.error.message);
+      return;
+    }
+    setShowTrash(false);
+    load();
+  }
   const table = isRent ? (
     <div className="rental-table">
       <div className="rental-head">
@@ -1796,23 +1807,19 @@ export function PropertyManagement({
           <section className="data-panel">
             <div className="panel-heading">
               <h2>
-                {showTrash ? "휴지통" : `${isRent ? "임대" : "매매"} 매물 목록`}{" "}
-                <b>{showTrash ? trash.length : rows.length}</b>
+                {`${isRent ? "임대" : "매매"} 매물 목록`}{" "}
+                <b>{rows.length}</b>
               </h2>
               <div className="panel-actions">
-                {!showTrash && (
-                  <>
-                    <span>{checked.length}건 선택</span>
-                    <button className="text-button" onClick={bulkDelete}>
-                      선택 삭제
-                    </button>
-                  </>
-                )}
+                <span>{checked.length}건 선택</span>
+                <button className="text-button" onClick={bulkDelete}>
+                  선택 삭제
+                </button>
                 <button
                   className="text-button"
                   onClick={() => setShowTrash(!showTrash)}
                 >
-                  {showTrash ? "목록으로" : "휴지통"}
+                  휴지통{trash.length ? ` (${trash.length})` : ""}
                 </button>
               </div>
             </div>
@@ -1826,26 +1833,52 @@ export function PropertyManagement({
               <div className="empty-state">불러오는 중입니다...</div>
             ) : error ? (
               <div className="error-state">{error}</div>
-            ) : showTrash ? (
-              <div className="trash-list">
-                {trash.map((r) => (
-                  <article className="trash-row" key={r.id}>
-                    <strong>{r.name}</strong>
-                    <button
-                      className="text-button"
-                      onClick={() => restore([r.id])}
-                    >
-                      복구
-                    </button>
-                  </article>
-                ))}
-              </div>
             ) : rows.length ? (
               table
             ) : (
               <div className="empty-state">등록된 매물이 없습니다.</div>
             )}
           </section>
+          {showTrash && (
+            <div className="modal-backdrop trash-modal-backdrop" onClick={() => setShowTrash(false)}>
+              <section className="trash-modal" onClick={(e) => e.stopPropagation()}>
+                <header className="trash-modal-head">
+                  <div>
+                    <div className="eyebrow">DELETED PROPERTIES</div>
+                    <h2>휴지통 <span>{trash.length}건</span></h2>
+                    <p>삭제된 {isRent ? "임대" : "매매"} 매물을 확인하고 복구할 수 있습니다.</p>
+                  </div>
+                  <button className="icon-button" type="button" onClick={() => setShowTrash(false)}>×</button>
+                </header>
+                <div className="trash-card-list">
+                  {trash.length ? trash.map((r) => {
+                    const x = d(r);
+                    const photo = x.photoUrl;
+                    return (
+                      <article className="trash-property-card" key={r.id}>
+                        <div className="trash-property-photo">
+                          {photo ? <img src={photo} alt="매물 사진" /> : <span>사진 없음</span>}
+                        </div>
+                        <div className="trash-property-main">
+                          <div className="trash-property-title"><span>{r.category || "기타"}</span><strong>{r.name || "이름 없음"}</strong></div>
+                          <p>{r.address || "주소 미입력"}</p>
+                          <small>{formatFloorRange(x.floorFrom, x.floorTo, x.floor)} · {x.exclusivePyeong || x.leasePyeong || "면적 미입력"}평</small>
+                        </div>
+                        <div className="trash-property-meta">
+                          <span>{isRent ? `보증금 ${x.deposit || 0} · 월세 ${x.monthlyRent || 0}` : `매매가 ${x.salePrice || "미입력"}`}</span>
+                          <small>삭제일 {r.deleted_at?.slice(0, 10) || "-"}</small>
+                        </div>
+                        <div className="trash-property-actions">
+                          <button className="text-button" type="button" onClick={() => restore([r.id])}>복구</button>
+                          <button className="text-button danger" type="button" onClick={() => purge([r.id])}>영구 삭제</button>
+                        </div>
+                      </article>
+                    );
+                  }) : <div className="empty-state">휴지통이 비어 있습니다.</div>}
+                </div>
+              </section>
+            </div>
+          )}
           {open && (
             <div className="modal-backdrop">
               <form className="property-detail-modal" onSubmit={save}>
