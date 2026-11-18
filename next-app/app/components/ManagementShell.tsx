@@ -1128,6 +1128,8 @@ export function PropertyManagement({
       approvalDate: x.approvalDate || "",
       note: "",
       photoUrl: x.photoUrl || "",
+      buildingPdfUrl: x.buildingPdfUrl || "",
+      buildingPdfName: x.buildingPdfName || "",
     };
   }
   useEffect(() => {
@@ -1576,6 +1578,13 @@ export function PropertyManagement({
     }
     const photoUrl = await uploadPhoto(s, a.user.id);
     const buildingPdfUrl = await uploadBuildingPdf(s, a.user.id);
+    // Keep the PDF metadata with this property even when the modal is
+    // reopened without selecting a new file.  The visible label is stateful,
+    // so fall back to the form/row value when the transient state is empty.
+    const persistedPdfName =
+      pdfName || form.buildingPdfName || selected?.data?.buildingPdfName || "";
+    const persistedPdfUrl =
+      buildingPdfUrl || form.buildingPdfUrl || selected?.data?.buildingPdfUrl || "";
     let publicNumber = selected?.public_number || null;
     if (!publicNumber) {
       const existing = await s
@@ -1627,8 +1636,8 @@ export function PropertyManagement({
       approvalDate: form.approvalDate,
       note: form.note,
       photoUrl,
-      buildingPdfUrl,
-      buildingPdfName: pdfName,
+      buildingPdfUrl: persistedPdfUrl,
+      buildingPdfName: persistedPdfName,
     };
     const payload = {
       market_type: marketType,
@@ -2099,8 +2108,8 @@ export function PropertyManagement({
                         >
                           {pdfParsing
                             ? "PDF 분석 중..."
-                            : pdfName
-                              ? `PDF: ${pdfName}`
+                            : pdfName || form.buildingPdfName
+                              ? `PDF: ${pdfName || form.buildingPdfName}`
                               : "PDF 업로드"}
                         </button>
                       </span>
