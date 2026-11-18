@@ -10,6 +10,28 @@ import {
   parseBuildingRegister,
 } from "@/lib/buildingRegister";
 export type MarketType = "rent" | "sale";
+const CATEGORY_OPTIONS = ["상가", "사무실", "아파트", "단독다가구", "다세대", "오피스텔", "기타"] as const;
+const STATUS_OPTIONS = ["준비", "컨택", "진행", "보류", "비공개(진행)", "비공개(보류)", "거래완료", "기타"] as const;
+function canonicalStatus(value: string) {
+  if (value === "중개중") return "진행";
+  if (value === "계약완료") return "거래완료";
+  if (value === "상황") return "기타";
+  return value;
+}
+function statusDotClass(value: string) {
+  const key = canonicalStatus(value);
+  const slug: Record<string, string> = {
+    준비: "ready",
+    컨택: "contact",
+    진행: "active",
+    보류: "hold",
+    "비공개(진행)": "private-active",
+    "비공개(보류)": "private-hold",
+    거래완료: "done",
+    기타: "other",
+  };
+  return `status-dot status-dot-${slug[key] || "other"}`;
+}
 type Row = {
   id: string;
   public_number?: string | null;
@@ -343,14 +365,9 @@ function matchesRentalFilter(row: Row, f: RentalFilter) {
     .join(" ")
     .toLowerCase();
   if (q && !hay.includes(q)) return false;
-  const status =
-    f.status === "중개중"
-      ? "진행"
-      : f.status === "계약완료"
-        ? "거래완료"
-        : f.status;
+  const status = canonicalStatus(f.status);
   if (f.category && row.category !== f.category) return false;
-  if (status && row.status !== status) return false;
+  if (status && canonicalStatus(row.status) !== status) return false;
   if (f.region && !(row.address || "").startsWith(f.region)) return false;
   if (
     f.address &&
@@ -424,11 +441,7 @@ function RentalFilterPanel({
             onChange={(e) => change("category", e.target.value)}
           >
             <option value="">전체 분류</option>
-            <option>상가</option>
-            <option>사무실</option>
-            <option>상가주택</option>
-            <option>아파트</option>
-            <option>기타</option>
+            {CATEGORY_OPTIONS.map((option) => <option key={option}>{option}</option>)}
           </select>
         </label>
         <label>
@@ -438,9 +451,7 @@ function RentalFilterPanel({
             onChange={(e) => change("status", e.target.value)}
           >
             <option value="">전체 상태</option>
-            <option>중개중</option>
-            <option>보류</option>
-            <option>계약완료</option>
+            {STATUS_OPTIONS.map((option) => <option key={option}>{option}</option>)}
           </select>
         </label>
         <label>
@@ -631,14 +642,9 @@ function matchesSaleFilter(row: Row, f: SaleFilter) {
     .join(" ")
     .toLowerCase();
   if (q && !hay.includes(q)) return false;
-  const status =
-    f.status === "중개중"
-      ? "진행"
-      : f.status === "계약완료"
-        ? "거래완료"
-        : f.status;
+  const status = canonicalStatus(f.status);
   if (f.category && row.category !== f.category) return false;
-  if (status && row.status !== status) return false;
+  if (status && canonicalStatus(row.status) !== status) return false;
   if (f.region && !(row.address || "").startsWith(f.region)) return false;
   if (
     f.address &&
@@ -712,10 +718,7 @@ function SaleFilterPanel({
             onChange={(e) => change("category", e.target.value)}
           >
             <option value="">전체 분류</option>
-            <option>상가</option>
-            <option>사무실</option>
-            <option>아파트</option>
-            <option>기타</option>
+            {CATEGORY_OPTIONS.map((option) => <option key={option}>{option}</option>)}
           </select>
         </label>
         <label>
@@ -725,9 +728,7 @@ function SaleFilterPanel({
             onChange={(e) => change("status", e.target.value)}
           >
             <option value="">전체 상태</option>
-            <option>중개중</option>
-            <option>보류</option>
-            <option>계약완료</option>
+            {STATUS_OPTIONS.map((option) => <option key={option}>{option}</option>)}
           </select>
         </label>
         <label>
@@ -1090,7 +1091,7 @@ export function PropertyManagement({
       ...initial,
       name: r.name,
       category: r.category,
-      status: r.status,
+      status: canonicalStatus(r.status),
       address: r.address,
       manager: r.manager || "",
       self: x.self || "",
@@ -1444,7 +1445,7 @@ export function PropertyManagement({
               <small>{x.managementNumber || ""}</small>
               <strong>{r.public_number || x.propertyNumber || `S-${r.updated_at.slice(0, 4)}-${String(2001 + i).padStart(5, "0")}`}</strong>
             </div>
-            <span className="status-pill">{r.status || "—"}</span>
+            <span className="status-pill"><i className={statusDotClass(r.status)} />{canonicalStatus(r.status) || "—"}</span>
             <span className="photo-cell">사진</span>
             <div>
               <small>{r.category}</small>
@@ -1740,7 +1741,7 @@ export function PropertyManagement({
             <small>{d(r).managementNumber || ""}</small>
             <strong>{r.public_number || d(r).propertyNumber || `R-${r.updated_at.slice(0, 4)}-${String(1001 + i).padStart(5, "0")}`}</strong>
           </div>
-          <span className="status-pill">{r.status || "—"}</span>
+          <span className="status-pill"><i className={statusDotClass(r.status)} />{canonicalStatus(r.status) || "—"}</span>
           <span className="photo-cell">사진</span>
           <div>
             <small>{r.category}</small>
@@ -1806,7 +1807,7 @@ export function PropertyManagement({
             <div>
               <span>중개중</span>
               <strong>
-                {sourceRows.filter((r) => r.status === "진행").length}
+                {sourceRows.filter((r) => canonicalStatus(r.status) === "진행").length}
               </strong>
             </div>
             <div>
@@ -1972,13 +1973,13 @@ export function PropertyManagement({
                           label="분류"
                           value={form.category}
                           onChange={(v) => set("category", v)}
-                          options={["상가", "사무실", "아파트", "기타"]}
+                          options={[...CATEGORY_OPTIONS]}
                         />
                         <Select
                           label="진행상태"
                           value={form.status}
                           onChange={(v) => set("status", v)}
-                          options={["준비", "진행", "상황", "보류", "거래완료"]}
+                          options={[...STATUS_OPTIONS]}
                         />
                       </span>
                       <Input
