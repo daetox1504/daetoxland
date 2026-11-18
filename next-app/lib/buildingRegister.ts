@@ -19,6 +19,18 @@ function cleanFloorUsage(value:string){
  return usage
 }
 
+// PDF.js의 텍스트 레이어는 페이지/열 순서를 섞어 반환할 수 있으므로,
+// 건축물현황 표가 의도한 층 순서(지하 → 1층 → 2층 …)를 마지막에 복원한다.
+// 같은 층의 여러 행은 입력 순서를 그대로 유지한다(ES2019 stable sort).
+function floorOrder(value:string){
+ const normalized=value.replace(/\s+/g,'')
+ if(/지하층/i.test(normalized)) return -1
+ const basement=normalized.match(/지하(-?\d+)층/i)
+ if(basement) return Number(basement[1]) * -1
+ const numeric=normalized.match(/(-?\d+)층/)
+ return numeric ? Number(numeric[1]) : Number.MAX_SAFE_INTEGER
+}
+
 function parseFloorRows(text:string):BuildingFloorRow[] {
  const rows:BuildingFloorRow[]=[]
  const seen=new Map<string,number>()
@@ -82,6 +94,7 @@ function parseFloorRows(text:string):BuildingFloorRow[] {
   seen.set(key,rows.length)
   rows.push({floor,structure,usage,area,areaPyeong:formatPyeong(area),note:''})
  })
+ rows.sort((a,b)=>floorOrder(a.floor)-floorOrder(b.floor))
  return rows
 }
 
