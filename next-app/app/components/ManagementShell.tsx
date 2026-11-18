@@ -1385,6 +1385,12 @@ export function PropertyManagement({
       setForm(formFromRow(selected));
       const saved = (selected.data?.floorRows ?? []) as BuildingFloorRow[];
       setFloorRows(Array.isArray(saved) ? saved : []);
+      // PDF 선택 상태는 모달 전체가 아니라 현재 매물 데이터에 귀속한다.
+      // 다른 매물을 열 때 이전 매물의 파일명이 남지 않도록 즉시 교체한다.
+      const savedPdfName = selected.data?.buildingPdfName;
+      setPdfName(typeof savedPdfName === "string" ? savedPdfName : "");
+      setPdfFile(null);
+      setFloorOpen(false);
     }
   }, [selected]);
   useEffect(() => {
@@ -2075,7 +2081,10 @@ export function PropertyManagement({
                   <Card
                     title="건축물대장"
                     action={
-                      <>
+                      <span className="building-card-actions">
+                        {form.violation === "O" && (
+                          <span className="violation-badge">위반건축물</span>
+                        )}
                         <input
                           ref={pdfInputRef}
                           type="file"
@@ -2094,7 +2103,7 @@ export function PropertyManagement({
                               ? `PDF: ${pdfName}`
                               : "PDF 업로드"}
                         </button>
-                      </>
+                      </span>
                     }
                   >
                     <div className="two-col">
