@@ -20,6 +20,7 @@ type Row = {
   favorite: boolean;
   manager: string;
   data: Record<string, string> | null;
+  created_at?: string | null;
   updated_at: string;
   deleted_at?: string | null;
 };
@@ -923,7 +924,7 @@ export function PropertyManagement({
     const a = await s
       .from("properties")
       .select(
-        "id,public_number,name,category,address,status,favorite,manager,data,updated_at,deleted_at",
+        "id,public_number,name,category,address,status,favorite,manager,data,created_at,updated_at,deleted_at",
       )
       .eq("market_type", marketType)
       .is("deleted_at", null)
@@ -931,7 +932,7 @@ export function PropertyManagement({
     const t = await s
       .from("properties")
       .select(
-        "id,public_number,name,category,address,status,favorite,manager,data,updated_at,deleted_at",
+        "id,public_number,name,category,address,status,favorite,manager,data,created_at,updated_at,deleted_at",
       )
       .eq("market_type", marketType)
       .not("deleted_at", "is", null)
@@ -1440,7 +1441,7 @@ export function PropertyManagement({
               ★
             </span>
             <div className="property-number-cell">
-              <small>{x.managementNumber || "자체관리번호 없음"}</small>
+              <small>{x.managementNumber || ""}</small>
               <strong>{r.public_number || x.propertyNumber || `S-${r.updated_at.slice(0, 4)}-${String(2001 + i).padStart(5, "0")}`}</strong>
             </div>
             <span className="status-pill">{r.status || "—"}</span>
@@ -1454,7 +1455,7 @@ export function PropertyManagement({
             <span>{pyeong}</span>
             <span className="amount-cell">{x.salePrice || "미입력"}</span>
             <span>{x.recommendation || "—"}</span>
-            <span>{r.updated_at.slice(0, 10)}</span>
+            <div className="date-cell"><small>등록 {r.created_at?.slice(0, 10) || r.updated_at.slice(0, 10)}</small><small>수정 {r.updated_at.slice(0, 10)}</small></div>
           </article>
         );
       })}
@@ -1733,7 +1734,7 @@ export function PropertyManagement({
           </span>
           <span className={r.favorite ? "favorite active" : "favorite"}>★</span>
           <div className="property-number-cell">
-            <small>{d(r).managementNumber || "자체관리번호 없음"}</small>
+            <small>{d(r).managementNumber || ""}</small>
             <strong>{r.public_number || d(r).propertyNumber || `R-${r.updated_at.slice(0, 4)}-${String(1001 + i).padStart(5, "0")}`}</strong>
           </div>
           <span className="status-pill">{r.status || "—"}</span>
@@ -1750,7 +1751,7 @@ export function PropertyManagement({
             <br />
             월세 {d(r).monthlyRent || 0}
           </span>
-          <span>{r.updated_at.slice(0, 10)}</span>
+          <div className="date-cell"><small>등록 {r.created_at?.slice(0, 10) || r.updated_at.slice(0, 10)}</small><small>수정 {r.updated_at.slice(0, 10)}</small></div>
         </article>
       ))}
     </div>
@@ -1903,6 +1904,12 @@ export function PropertyManagement({
                         ? "저장된 매물 상세"
                         : "임시 매물번호 · 저장 전 입력"}
                     </p>
+                    {selected && (
+                      <div className="detail-dates">
+                        <span>등록일 {selected.created_at?.slice(0, 10) || selected.updated_at.slice(0, 10)}</span>
+                        <span>수정일 {selected.updated_at.slice(0, 10)}</span>
+                      </div>
+                    )}
                   </div>
                   <div className="detail-head-actions">
                     <Input
