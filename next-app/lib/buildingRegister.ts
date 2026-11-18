@@ -37,6 +37,27 @@ function parseFloorRows(text:string):BuildingFloorRow[] {
  const compact=text.replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim()
  for(const match of compact.matchAll(new RegExp(pattern.source,'gi'))) add(match)
  for(const match of compact.matchAll(new RegExp(loosePattern.source,'gi'))) add(match)
+ // 마지막 보완 단계: PDF.js가 행 번호/공백을 모두 제거한 경우에도
+ // 층 라벨 단위로 구간을 나눠 구조·용도·면적을 복원한다.
+ const floorToken=/(?:(?:지하|지상)\s*층|(?:지하|지상)?\s*-?\d+\s*층)/gi
+ const tokens=[...compact.matchAll(floorToken)]
+ tokens.forEach((token,index)=>{
+  const floor=token[0].replace(/\s+/g,'')
+  const start=(token.index??0)+token[0].length
+  const end=index+1<tokens.length?(tokens[index+1].index??compact.length):compact.length
+  const segment=compact.slice(start,end)
+  const structureMatch=segment.match(/([^\s]+(?:조|구조))/i)
+  if(!structureMatch||structureMatch.index===undefined) return
+  const afterStructure=segment.slice(structureMatch.index+structureMatch[0].length)
+  const areaMatch=afterStructure.match(/([\d,.]+)\s*(?:㎡|m2|m²)?/i)
+  if(!areaMatch) return
+  const usage=afterStructure.slice(0,areaMatch.index??0).trim()
+  const area=areaMatch[1].replace(/,/g,'')
+  const key=`${floor}|${structureMatch[1]}|${usage}|${area}`
+  if(seen.has(key)) return
+  seen.add(key)
+  rows.push({floor,structure:structureMatch[1].trim(),usage,area,areaPyeong:formatPyeong(area),note:''})
+ })
  return rows
 }
 
