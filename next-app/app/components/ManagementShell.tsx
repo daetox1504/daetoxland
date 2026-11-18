@@ -1877,7 +1877,13 @@ export function PropertyManagement({
                     <button
                       className="text-button"
                       type="button"
-                      onClick={() => setOpen(false)}
+                      onClick={() => {
+                        setOpen(false);
+                        setSelected(null);
+                        setPhotoFile(null);
+                        setPdfFile(null);
+                        setPdfName("");
+                      }}
                     >
                       취소
                     </button>
