@@ -12,14 +12,22 @@ function formatPyeong(value:string){
 
 function parseFloorRows(text:string):BuildingFloorRow[] {
  const rows:BuildingFloorRow[]=[]
- const seen=new Set<string>()
+ const seen=new Map<string,number>()
  const add=(match:RegExpMatchArray)=>{
   const area=match[4].replace(/,/g,'')
   const floor=match[1].replace(/\s+/g,'')
-  const key=`${floor}|${match[2]}|${match[3]}|${area}`
-  if(seen.has(key)) return
-  seen.add(key)
-  rows.push({floor,structure:match[2].trim(),usage:match[3].trim(),area,areaPyeong:formatPyeong(area),note:''})
+  const structure=match[2].trim()
+  const usage=match[3].trim()
+  if(!usage||usage.length>120) return
+  const key=`${floor}|${structure}|${area}`
+  const existing=seen.get(key)
+  if(existing!==undefined){
+   if(rows[existing].usage.length<=usage.length) return
+   rows[existing]={floor,structure,usage,area,areaPyeong:formatPyeong(area),note:''}
+   return
+  }
+  seen.set(key,rows.length)
+  rows.push({floor,structure,usage,area,areaPyeong:formatPyeong(area),note:''})
  }
  // PDF.js는 표의 셀 사이 공백을 제거하거나 다음 행의 "주1"을 바로 붙이는
  // 경우가 있으므로, 행 번호(주1) 또는 이하여백을 행의 경계로 사용한다.
@@ -53,10 +61,17 @@ function parseFloorRows(text:string):BuildingFloorRow[] {
   if(!areaMatch) return
   const usage=afterStructure.slice(0,areaMatch.index??0).trim()
   const area=areaMatch[1].replace(/,/g,'')
-  const key=`${floor}|${structureMatch[1]}|${usage}|${area}`
-  if(seen.has(key)) return
-  seen.add(key)
-  rows.push({floor,structure:structureMatch[1].trim(),usage,area,areaPyeong:formatPyeong(area),note:''})
+  if(!usage||usage.length>120) return
+  const structure=structureMatch[1].trim()
+  const key=`${floor}|${structure}|${area}`
+  const existing=seen.get(key)
+  if(existing!==undefined){
+   if(rows[existing].usage.length<=usage.length) return
+   rows[existing]={floor,structure,usage,area,areaPyeong:formatPyeong(area),note:''}
+   return
+  }
+  seen.set(key,rows.length)
+  rows.push({floor,structure,usage,area,areaPyeong:formatPyeong(area),note:''})
  })
  return rows
 }
