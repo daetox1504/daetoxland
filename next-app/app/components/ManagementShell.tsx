@@ -1605,7 +1605,10 @@ export function PropertyManagement({
       data: detail,
     };
     const result = selected
-      ? await s.from("properties").update(payload).eq("id", selected.id)
+      ? await s
+          .from("properties")
+          .update({ ...payload, updated_at: new Date().toISOString() })
+          .eq("id", selected.id)
       : await s.from("properties").insert({ ...payload, user_id: a.user.id });
     if (result.error) setError(result.error.message);
     else {
