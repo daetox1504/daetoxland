@@ -11,6 +11,7 @@ function formatPyeong(value:string){
 }
 function cleanFloorUsage(value:string){
  let usage=value.replace(/\s+/g,' ').trim()
+ if(/(?:^|\s)(?:구분|수량|용량|변동|인허가|사용승인|건축물|대지위치|도로명주소|경면적)(?:\s|$)/i.test(usage)) return ''
  const metadata=usage.search(/\s+(?:일반건축물대장|건물ID|고유번호|명칭|대지위치|도로명주소|주구조|주용도|층수|건축물\s*현황|※)/i)
  if(metadata>=0) usage=usage.slice(0,metadata).trim()
  const area=usage.search(/\s+\d[\d,.]*(?:\s|$)/)
@@ -27,10 +28,10 @@ function parseFloorRows(text:string):BuildingFloorRow[] {
   const structure=match[2].trim()
   const usage=cleanFloorUsage(match[3])
   if(!usage||usage.length>120) return
-  const key=`${floor}|${structure}|${area}`
+  const key=`${floor}|${structure}|${usage}`
   const existing=seen.get(key)
   if(existing!==undefined){
-   if(rows[existing].usage.length<=usage.length) return
+   if(Number(rows[existing].area)>=Number(area)) return
    rows[existing]={floor,structure,usage,area,areaPyeong:formatPyeong(area),note:''}
    return
   }
@@ -71,10 +72,10 @@ function parseFloorRows(text:string):BuildingFloorRow[] {
   const area=areaMatch[1].replace(/,/g,'')
   if(!usage||usage.length>120) return
   const structure=structureMatch[1].trim()
-  const key=`${floor}|${structure}|${area}`
+  const key=`${floor}|${structure}|${usage}`
   const existing=seen.get(key)
   if(existing!==undefined){
-   if(rows[existing].usage.length<=usage.length) return
+   if(Number(rows[existing].area)>=Number(area)) return
    rows[existing]={floor,structure,usage,area,areaPyeong:formatPyeong(area),note:''}
    return
   }
