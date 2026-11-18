@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { extractBuildingPdf } from "@/lib/buildingPdf";
 import {
   BuildingFloorRow,
+  detectViolationStatus,
   parseBuildingRegister,
 } from "@/lib/buildingRegister";
 export type MarketType = "rent" | "sale";
@@ -1264,10 +1265,7 @@ export function PropertyManagement({
       }
       if (token !== pdfParseTokenRef.current) return;
       setFloorRows(parsed.floors);
-      const latestViolation = parsed.text.lastIndexOf("위반건축물");
-      const latestRelease = parsed.text.lastIndexOf("위반건축물 해제");
-      if (latestViolation >= 0)
-        set("violation", latestRelease > latestViolation ? "X" : "O");
+      set("violation", parsed.violation || detectViolationStatus(parsed.text));
       setForm((f) => ({
         ...f,
         approvalDate: parsed.fields.approvalDate || "",

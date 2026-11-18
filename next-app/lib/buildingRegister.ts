@@ -2,6 +2,7 @@ import { extractBuildingPdf, BuildingPdfFields } from './buildingPdf'
 import { extractBuildingPdfWithOcr } from './buildingOcrFixed'
 
 export type BuildingFloorRow={floor:string;structure:string;usage:string;area:string;areaPyeong?:string;note?:string}
+export type BuildingViolationStatus = 'O'|'X'|''
 const SQM_PER_PYEONG = 3.305785
 function formatPyeong(value:string){
  const number=Number(value)
@@ -29,6 +30,29 @@ function floorOrder(value:string){
  if(basement) return Number(basement[1]) * -1
  const numeric=normalized.match(/(-?\d+)층/)
  return numeric ? Number(numeric[1]) : Number.MAX_SAFE_INTEGER
+}
+
+/**
+ * 건축물대장 텍스트에서 위반건축물 상태를 판정한다.
+ * PDF마다 단어 사이에 공백/줄바꿈이 들어갈 수 있어 먼저 정규화하고,
+ * "위반건축물 해제/해당 없음"은 마지막 표기 기준으로 명시적으로 제외한다.
+ */
+export function detectViolationStatus(text:string):BuildingViolationStatus{
+ const normalized=text
+  .replace(/[\u200B-\u200D\uFEFF]/g,'')
+  .replace(/위반\s*건축물/gi,'위반건축물')
+  .replace(/\s+/g,' ')
+  .trim()
+ const matches=[...normalized.matchAll(/위반건축물/gi)]
+ if(!matches.length) return ''
+ let status:BuildingViolationStatus=''
+ for(const match of matches){
+  const index=match.index??0
+  const context=normalized.slice(Math.max(0,index-48),Math.min(normalized.length,index+72))
+  if(/위반건축물\s*(?:해제|없음|해당\s*없음|미해당)|(?:해제|없음|해당\s*없음|미해당)\s*위반건축물/i.test(context)) status='X'
+  else status='O'
+ }
+ return status
 }
 
 function parseFloorRows(text:string):BuildingFloorRow[] {
@@ -128,7 +152,7 @@ function mergeFields(base:BuildingPdfFields,text:string):BuildingPdfFields {
  }
 }
 
-export async function parseBuildingRegister(file:File):Promise<{fields:BuildingPdfFields;floors:BuildingFloorRow[];text:string}>{
+export async function parseBuildingRegister(file:File):Promise<{fields:BuildingPdfFields;floors:BuildingFloorRow[];text:string;violation:BuildingViolationStatus}>{
  let base=await extractBuildingPdf(file)
  let fields=mergeFields(base.fields,base.text)
  let floors=parseFloorRows(base.text)
@@ -141,5 +165,5 @@ export async function parseBuildingRegister(file:File):Promise<{fields:BuildingP
   const ocrFloors=parseFloorRows(ocr.text)
   if(ocrFields.buildingUse||ocrFields.buildingStructure||ocrFields.landArea||ocrFields.totalArea||ocrFields.buildingArea||ocrFloors.length){fields=ocrFields;floors=ocrFloors;base={...base,text:ocr.text}}
  }
- return {fields,floors,text:base.text}
+ return {fields,floors,text:base.text,violation:detectViolationStatus(base.text)}
 }
