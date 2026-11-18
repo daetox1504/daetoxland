@@ -506,7 +506,7 @@ function RentalFilterPanel({
           </span>
         </label>
         <label className="filter-range">
-          보증금 <small>만원</small>
+          <span className="filter-label-title">보증금 <small>만원</small></span>
           <span>
             <input
               value={f.depositMin}
@@ -524,7 +524,7 @@ function RentalFilterPanel({
           </span>
         </label>
         <label className="filter-range">
-          월세 <small>만원</small>
+          <span className="filter-label-title">월세 <small>만원</small></span>
           <span>
             <input
               value={f.rentMin}
