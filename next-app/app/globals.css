@@ -59,3 +59,5 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}button:focus-vis
 /* Keep the violation marker and PDF action scoped to the active property card. */
 .property-detail-modal .building-card-actions{display:inline-flex;align-items:center;gap:8px;margin-left:auto}
 .property-detail-modal .building-card-actions .violation-badge{margin-left:0}
+/* Keep destructive PDF action visually distinct while matching the compact text-button style. */
+.property-detail-modal .text-button.danger{color:#b94a48;border-color:#e6c5c4}.property-detail-modal .text-button.danger:hover{color:#9f2f2d;border-color:#c98b89;background:#fff7f7}

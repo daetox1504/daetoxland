@@ -1290,6 +1290,31 @@ export function PropertyManagement({
       if (token === pdfParseTokenRef.current) setPdfParsing(false);
     }
   }
+  function handleRemovePdf() {
+    pdfParseTokenRef.current += 1;
+    setPdfParsing(false);
+    setPdfFile(null);
+    setPdfName("");
+    setFloorRows([]);
+    setFloorOpen(false);
+    setForm((f) => ({
+      ...f,
+      buildingPdfUrl: "",
+      buildingPdfName: "",
+      buildingBasement: "0",
+      buildingGround: "1",
+      buildingUse: "",
+      buildingStructure: "",
+      landArea: "0",
+      totalArea: "0",
+      buildingArea: "0",
+      buildingElevator: "0",
+      parking: "0",
+      approvalDate: "",
+      violation: "",
+    }));
+    if (pdfInputRef.current) pdfInputRef.current.value = "";
+  }
   useEffect(() => {
     if (!open) return;
     const h = (event: Event) => {
@@ -2038,6 +2063,15 @@ export function PropertyManagement({
                               ? `PDF: ${pdfName || form.buildingPdfName}`
                               : "PDF 업로드"}
                         </button>
+                        {(pdfName || form.buildingPdfName || form.buildingPdfUrl) && (
+                          <button
+                            type="button"
+                            className="text-button danger"
+                            onClick={handleRemovePdf}
+                          >
+                            PDF 제거
+                          </button>
+                        )}
                       </span>
                     }
                   >
